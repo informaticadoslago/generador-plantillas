@@ -319,6 +319,33 @@ function dentroDePagina(e) {
   if (c.x < 0) e.x = r2(e.x - c.x);
   if (c.y < 0) e.y = r2(e.y - c.y);
 }
+/* Contenedor: un elemento con `padre` (id de un rectángulo) guarda x, y y giro relativos al rectángulo. */
+function padreDe(e) { return e.padre ? porId(e.padre) : null; }
+function esHijo(e) { return !!padreDe(e); }
+function hijosDe(r) { return doc.elementos.filter((h) => h.padre === r.id); }
+// Pasa un elemento de las coordenadas del rectángulo a las de la página (lo desvincula).
+function desvincular(e) {
+  const p = padreDe(e);
+  delete e.padre;
+  if (!p) return;
+  const th = (p.giro || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+  const hh = e.tipo === 'linea' ? 0 : e.h;
+  const lx = e.x + e.w / 2 - p.w / 2, ly = e.y + hh / 2 - p.h / 2;
+  const cx = p.x + p.w / 2 + lx * c - ly * sn, cy = p.y + p.h / 2 + lx * sn + ly * c;
+  e.giro = normGiro((e.giro || 0) + (p.giro || 0));
+  e.x = r2(cx - e.w / 2); e.y = r2(cy - hh / 2);
+}
+// Inverso: mete un elemento suelto dentro de un rectángulo conservando su posición en la página.
+function vincular(e, p) {
+  if (e.padre) desvincular(e);
+  const th = (p.giro || 0) * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+  const hh = e.tipo === 'linea' ? 0 : e.h;
+  const dx = e.x + e.w / 2 - (p.x + p.w / 2), dy = e.y + hh / 2 - (p.y + p.h / 2);
+  const lx = dx * c + dy * sn, ly = -dx * sn + dy * c;
+  e.x = r2(lx + p.w / 2 - e.w / 2); e.y = r2(ly + p.h / 2 - hh / 2);
+  e.giro = normGiro((e.giro || 0) - (p.giro || 0));
+  e.padre = p.id;
+}
 function banda(e) {
   const [, H] = dims();
   const centro = e.y + (e.tipo === 'linea' ? 0 : e.h / 2);
@@ -345,8 +372,12 @@ function elementoXML(e) {
       return `    <texto ${p} ancho="${num(e.w)}" alto="${num(e.h)}" tam="${num(e.tam)}" negrita="${e.negrita ? 'true' : 'false'}" alinear="${e.alinear}"${e.borde > 0 ? ` borde="${num(e.borde)}"` : ''}${e.relleno ? ` relleno="${esc(e.relleno)}"` : ''}>${esc(e.texto || '')}</texto>\n`;
     case 'linea':
       return `    <linea ${p} largo="${num(e.w)}" grosor="${num(e.grosor)}"/>\n`;
-    case 'rectangulo':
-      return `    <rectangulo ${p} ancho="${num(e.w)}" alto="${num(e.h)}" grosor="${num(e.grosor)}" relleno="${esc(e.relleno || '')}"/>\n`;
+    case 'rectangulo': {
+      const a = `<rectangulo ${p} ancho="${num(e.w)}" alto="${num(e.h)}" grosor="${num(e.grosor)}" relleno="${esc(e.relleno || '')}"`;
+      const hs = hijosDe(e);
+      if (!hs.length) return `    ${a}/>\n`;
+      return `    ${a}>\n` + hs.map((h) => '  ' + elementoXML(h)).join('') + '    </rectangulo>\n';
+    }
   }
   return '';
 }
@@ -374,14 +405,14 @@ function toXML() {
   x += '  </pagina>\n';
   x += marcaXML();
   x += `  <cabecera altura="${num(doc.cabAlt)}">\n`;
-  x += doc.elementos.filter((e) => banda(e) === 'cabecera').map(elementoXML).join('');
+  x += doc.elementos.filter((e) => !esHijo(e) && banda(e) === 'cabecera').map(elementoXML).join('');
   x += '  </cabecera>\n';
   x += `  <cuerpo datos="${esc(doc.datos)}">\n`;
   x += doc.columnas.map((c) =>
     `    <columna campo="${esc(c.campo)}" titulo="${esc(c.titulo)}" ancho="${num(c.ancho)}" alinear="${c.alinear}" formato="${esc(c.formato || '')}"/>\n`).join('');
   x += '  </cuerpo>\n';
   x += `  <pie altura="${num(doc.pieAlt)}">\n`;
-  x += doc.elementos.filter((e) => banda(e) === 'pie').map(elementoXML).join('');
+  x += doc.elementos.filter((e) => !esHijo(e) && banda(e) === 'pie').map(elementoXML).join('');
   x += '  </pie>\n';
   x += '</plantilla>\n';
   return x;
@@ -439,7 +470,7 @@ function fromXML(texto) {
 
   const leerElementos = (banda) => {
     if (!banda) return;
-    for (const c of Array.from(banda.children)) {
+    const leerUno = (c, padre) => {
       const base = { x: n(c, 'x', 0), y: n(c, 'y', 0) };
       const antes = nuevo.elementos.length;
       if (c.nodeName === 'logo') {
@@ -464,8 +495,16 @@ function fromXML(texto) {
           grosor: n(c, 'grosor', 0.3), relleno: s(c, 'relleno', ''),
         }));
       }
-      if (nuevo.elementos.length > antes) nuevo.elementos[antes].giro = normGiro(n(c, 'giro', 0));
-    }
+      if (nuevo.elementos.length > antes) {
+        const nuevoEl = nuevo.elementos[antes];
+        nuevoEl.giro = normGiro(n(c, 'giro', 0));
+        if (padre) nuevoEl.padre = padre.id;
+        else if (c.nodeName === 'rectangulo') {
+          for (const h of Array.from(c.children)) if (['logo', 'texto', 'linea'].includes(h.nodeName)) leerUno(h, nuevoEl);
+        }
+      }
+    };
+    for (const c of Array.from(banda.children)) leerUno(c, null);
   };
 
   const cab = hijo(raiz, 'cabecera');
@@ -628,7 +667,7 @@ function render() {
   pagina.append(g1, g2);
 
   // Elementos
-  doc.elementos.forEach((e) => pagina.appendChild(dibujarElemento(e)));
+  doc.elementos.filter((e) => !esHijo(e)).forEach((e) => pagina.appendChild(dibujarElemento(e)));
 }
 
 function dibujarMarca(k, W, H) {
@@ -708,6 +747,7 @@ function dibujarElemento(e) {
       if (e.relleno) c.style.background = e.relleno;
     }
     caja.appendChild(c);
+    if (e.tipo === 'rectangulo') hijosDe(e).forEach((h) => caja.appendChild(dibujarElemento(h)));
   }
   caja.dataset.id = e.id;
   if (e.giro) caja.style.transform = `rotate(${e.giro}deg)`;
@@ -751,7 +791,7 @@ pagina.addEventListener('pointerdown', (ev) => {
 function iniciarDrag(ev, e, modo) {
   ev.preventDefault();
   seleccionar(e.id);
-  drag = { id: e.id, modo, sx: ev.clientX, sy: ev.clientY, ox: e.x, oy: e.y, ow: e.w, oh: e.h, og: e.giro || 0, movido: false };
+  drag = { id: e.id, modo, sx: ev.clientX, sy: ev.clientY, ox: e.x, oy: e.y, ow: e.w, oh: e.h, og: e.giro || 0, pg: (padreDe(e) || {}).giro || 0, hijo: esHijo(e), movido: false };
   window.addEventListener('pointermove', moverDrag);
   window.addEventListener('pointerup', terminarDrag);
 }
@@ -764,24 +804,30 @@ function moverDrag(ev) {
   if (!drag.movido && Math.hypot(dx, dy) * s < 3) return;
   drag.movido = true;
   const paso = ev.altKey ? 0.5 : doc.paso;     // Alt: ajuste fino
+  // Si está dentro de un rectángulo, el movimiento se pasa a los ejes del rectángulo (que puede estar girado).
+  const thP = drag.pg * Math.PI / 180;
+  const ddx = drag.hijo ? dx * Math.cos(thP) + dy * Math.sin(thP) : dx;
+  const ddy = drag.hijo ? -dx * Math.sin(thP) + dy * Math.cos(thP) : dy;
   if (drag.modo === 'mover') {
-    e.x = snap(drag.ox + dx, paso);
-    e.y = snap(drag.oy + dy, paso);
-    dentroDePagina(e);
+    e.x = snap(drag.ox + ddx, paso);
+    e.y = snap(drag.oy + ddy, paso);
+    if (!drag.hijo) dentroDePagina(e);
   } else if (drag.modo === 'giro') {
-    const r = pagina.getBoundingClientRect();
-    const cx = r.left + (e.x + e.w / 2) * s;
-    const cy = r.top + (e.y + (e.tipo === 'linea' ? 0 : e.h / 2)) * s;
+    const caja = pagina.querySelector(`[data-id="${e.id}"]`);
+    if (!caja) return;
+    const r = caja.getBoundingClientRect();     // el centro de la caja girada es su centro de giro
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     // El asa está encima del centro (ángulo -90°), así que 0° de giro = +90° del puntero.
     const grados = Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180 / Math.PI + 90;
     const pasoAng = ev.altKey ? 1 : 15;
-    e.giro = normGiro(Math.round(grados / pasoAng) * pasoAng);
-    dentroDePagina(e);
+    e.giro = normGiro(Math.round(grados / pasoAng) * pasoAng - drag.pg);
+    if (!drag.hijo) dentroDePagina(e);
   } else {
     // Redimensionar en los ejes del elemento (girado), dejando fija su esquina superior izquierda.
+    const thT = (drag.og + drag.pg) * Math.PI / 180;
+    const ldx = dx * Math.cos(thT) + dy * Math.sin(thT), ldy = -dx * Math.sin(thT) + dy * Math.cos(thT);
     const th = drag.og * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);
     const girar = (a, b) => [a * cos - b * sin, a * sin + b * cos];
-    const ldx = dx * cos + dy * sin, ldy = -dx * sin + dy * cos;
     const minimo = paso > 0 ? paso : 1;
     const w = Math.max(minimo, snap(drag.ow + ldx, paso));
     const h = e.tipo === 'linea' ? 0 : Math.max(minimo, snap(drag.oh + ldy, paso));
@@ -792,7 +838,7 @@ function moverDrag(ev) {
     if (e.tipo !== 'linea') e.h = h;
     e.x = r2(esqX + bx - w / 2);
     e.y = r2(esqY + by - h / 2);
-    dentroDePagina(e);
+    if (!drag.hijo) dentroDePagina(e);
   }
   render();
   sincronizarGeometria(e);
@@ -831,7 +877,7 @@ window.addEventListener('keydown', (ev) => {
   if (d) {
     ev.preventDefault();
     e.x = r2(e.x + d[0]); e.y = r2(e.y + d[1]);
-    dentroDePagina(e);
+    if (!esHijo(e)) dentroDePagina(e);
     render(); sincronizarGeometria(e); commitDiferido();
   }
 });
@@ -842,7 +888,22 @@ window.addEventListener('keydown', (ev) => {
 function anadir(tipo) {
   const m = doc.margen;
   const x = snap(m.izquierda + 10), y = snap(m.superior + 10);
+  // Con un rectángulo seleccionado (o un elemento de su interior), lo nuevo se añade dentro.
+  const actual = sel && sel !== 'cuerpo' && sel !== 'marca' ? porId(sel) : null;
+  const cont = actual ? (actual.tipo === 'rectangulo' ? actual : padreDe(actual)) : null;
   let e;
+  if (cont && tipo !== 'rectangulo') {
+    const mg = Math.min(2, cont.w / 4, cont.h / 4);
+    const iw = Math.max(5, r2(cont.w - 2 * mg)), ih = Math.max(3, r2(cont.h - 2 * mg));
+    if (tipo === 'logo') e = el('logo', mg, mg, Math.min(40, iw), Math.min(20, ih), { nombre: '', mime: '', datos: '' });
+    else if (tipo === 'texto') e = el('texto', mg, mg, iw, Math.min(10, ih), { texto: 'Texto {{campo}}', tam: 10, negrita: false, alinear: 'izquierda', borde: 0, relleno: '' });
+    else e = el('linea', mg, r2(cont.h / 2), iw, 0, { grosor: 0.3 });
+    e.padre = cont.id;
+    doc.elementos.push(e);
+    seleccionar(e.id);
+    commit();
+    return;
+  }
   if (tipo === 'logo') e = el('logo', x, y, 40, 20, { nombre: '', mime: '', datos: '' });
   else if (tipo === 'texto') e = el('texto', x, y, 60, 10, { texto: 'Texto {{campo}}', tam: 10, negrita: false, alinear: 'izquierda', borde: 0, relleno: '' });
   else if (tipo === 'linea') e = el('linea', x, y, 80, 0, { grosor: 0.3 });
@@ -857,6 +918,13 @@ function duplicar() {
   const c = JSON.parse(JSON.stringify(e));
   c.id = nuevoId(); c.x = r2(c.x + 5); c.y = r2(c.y + 5);
   doc.elementos.push(c);
+  if (e.tipo === 'rectangulo') {
+    hijosDe(e).forEach((h) => {
+      const hc = JSON.parse(JSON.stringify(h));
+      hc.id = nuevoId(); hc.padre = c.id;     // el contenido va con el rectángulo copiado
+      doc.elementos.push(hc);
+    });
+  }
   seleccionar(c.id);
   commit();
 }
@@ -864,6 +932,7 @@ function eliminar() {
   if (sel === 'marca') { doc.marca = null; sel = null; todo(); commit(); return; }
   const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
   if (!e) return;
+  if (e.tipo === 'rectangulo') hijosDe(e).forEach(desvincular);   // el contenido no se borra: queda suelto
   doc.elementos = doc.elementos.filter((x) => x.id !== e.id);
   sel = null;
   todo();
@@ -1115,8 +1184,9 @@ function panelElemento() {
     if (e) {
       panel.appendChild(seccion('Elemento: ' + e.tipo));
       // Con giro, x e y son los de la caja sin girar y pueden ser negativos.
-      const gx = campo('x (mm)', 'number', e.x, (v) => { e.x = e.giro ? v : Math.max(0, v); });
-      const gy = campo('y (mm)', 'number', e.y, (v) => { e.y = e.giro ? v : Math.max(0, v); });
+      const libre = e.giro || e.padre;
+      const gx = campo(e.padre ? 'x (mm, en el rectángulo)' : 'x (mm)', 'number', e.x, (v) => { e.x = libre ? v : Math.max(0, v); });
+      const gy = campo(e.padre ? 'y (mm, en el rectángulo)' : 'y (mm)', 'number', e.y, (v) => { e.y = libre ? v : Math.max(0, v); });
       const gw = campo(e.tipo === 'linea' ? 'Largo (mm)' : 'Ancho (mm)', 'number', e.w, (v) => { e.w = Math.max(0.5, v); });
       refs.x = gx._inp; refs.y = gy._inp; refs.w = gw._inp;
       panel.appendChild(fila(gx, gy));
@@ -1127,7 +1197,7 @@ function panelElemento() {
         refs.h = gh._inp;
         panel.appendChild(fila(gw, gh));
       }
-      const gg = campo('Giro (°, sentido horario)', 'number', e.giro || 0, (v) => { e.giro = normGiro(v); });
+      const gg = campo(e.padre ? 'Giro propio (°, se suma al del rectángulo)' : 'Giro (°, sentido horario)', 'number', e.giro || 0, (v) => { e.giro = normGiro(v); });
       refs.giro = gg._inp;
       panel.appendChild(fila(gg));
       const botonesGiro = document.createElement('div');
@@ -1135,12 +1205,36 @@ function panelElemento() {
       [['↺ 90°', -90], ['↻ 90°', 90], ['180°', 180], ['0°', null]].forEach(([t, d]) => {
         botonesGiro.appendChild(boton(t, () => {
           e.giro = d === null ? 0 : normGiro((e.giro || 0) + d);
-          dentroDePagina(e);
+          if (!esHijo(e)) dentroDePagina(e);
           render(); panelElemento(); commit();
         }));
       });
       panel.appendChild(botonesGiro);
       panel.appendChild(nota('También puedes girar arrastrando el círculo que sale encima del elemento.'));
+      if (e.tipo === 'rectangulo') {
+        const hs = hijosDe(e);
+        panel.appendChild(nota(hs.length
+          ? `Contiene ${hs.length} elemento(s): giran y se mueven con el rectángulo. «+ Texto», «+ Logo» y «+ Línea» añaden dentro mientras esté seleccionado.`
+          : 'Vacío. Con el rectángulo seleccionado, «+ Texto», «+ Logo» y «+ Línea» añaden dentro; también puedes meter uno existente con «Contenedor» en su panel.'));
+        if (hs.length) {
+          panel.appendChild(boton('Desvincular todo el contenido', () => {
+            hs.forEach(desvincular); render(); panelElemento(); commit();
+          }));
+        }
+      } else {
+        const rects = doc.elementos.filter((r) => r.tipo === 'rectangulo');
+        if (rects.length || e.padre) {
+          panel.appendChild(fila(campo('Contenedor', 'select', e.padre || '', (v) => {
+            if (v) vincular(e, porId(v)); else desvincular(e);
+            setTimeout(panelElemento, 0);
+          }, [['', 'Ninguno (suelto)'], ...rects.map((r, i) => [r.id, `Rectángulo ${i + 1} (${num(r.w)}×${num(r.h)} mm)`])])));
+          if (e.padre) {
+            panel.appendChild(boton('Desvincular del rectángulo', () => {
+              desvincular(e); render(); panelElemento(); commit();
+            }));
+          }
+        }
+      }
       if (e.tipo === 'texto') {
         panel.appendChild(fila(campo('Texto (usa {{campo}})', 'textarea', e.texto, (v) => { e.texto = v; })));
         panel.appendChild(fila(
@@ -1181,7 +1275,7 @@ function panelElemento() {
           campo('Relleno (#rrggbb)', 'text', e.relleno || '', (v) => { e.relleno = v; }),
         ));
       }
-      panel.appendChild(nota('Banda en el XML: ' + banda(e) + ' (según su posición vertical).'));
+      panel.appendChild(nota(e.padre ? 'Va dentro de un rectángulo: se guarda anidado en el XML con coordenadas relativas.' : 'Banda en el XML: ' + banda(e) + ' (según su posición vertical).'));
     }
   } else {
     panel.appendChild(seccion('Elemento'));
