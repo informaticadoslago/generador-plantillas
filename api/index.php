@@ -14,7 +14,7 @@ declare(strict_types=1);
  * Mismo esquema que la futura migración de Laravel: nombre único, xml, version y fechas.
  */
 
-const MAX_XML = 1000000;
+const MAX_XML = 5000000;   // incluye las imágenes en base64
 
 function responder(int $codigo, array $datos): never
 {
@@ -72,7 +72,7 @@ function validarNombre(string $nombre): void
 function validarXml(string $xml, string $nombre): void
 {
     if ($xml === '' || strlen($xml) > MAX_XML) {
-        fallo(422, 'El XML está vacío o supera 1 MB.');
+        fallo(422, 'El XML está vacío o supera 5 MB.');
     }
     if (stripos($xml, '<!DOCTYPE') !== false || stripos($xml, '<!ENTITY') !== false) {
         fallo(422, 'El XML no puede llevar DOCTYPE ni entidades.');
@@ -91,6 +91,19 @@ function validarXml(string $xml, string $nombre): void
     }
     if ($raiz->getAttribute('nombre') !== $nombre) {
         fallo(422, 'El atributo nombre de <plantilla> debe coincidir con el nombre de la plantilla.');
+    }
+    // Las imágenes de los logos van dentro del XML en base64.
+    $tiposImagen = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+    $alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    foreach ($dom->getElementsByTagName('logo') as $logo) {
+        $datos = preg_replace('/\s+/', '', $logo->textContent);
+        if ($datos === '') {
+            continue;
+        }
+        $resto = substr($datos, strspn($datos, $alfabeto));
+        if (!in_array($logo->getAttribute('tipo'), $tiposImagen, true) || !in_array($resto, ['', '=', '=='], true)) {
+            fallo(422, 'La imagen de un logo no es válida (tipo o base64 incorrecto).');
+        }
     }
 }
 

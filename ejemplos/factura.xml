@@ -4,7 +4,7 @@
     <margen superior="25" inferior="20" izquierda="15" derecha="15"/>
   </pagina>
   <cabecera altura="70">
-    <logo src="logo.png" x="15" y="10" ancho="40" alto="20"/>
+    <logo nombre="logo.png" x="15" y="10" ancho="40" alto="20"/>
     <texto x="65" y="10" ancho="70" alto="20" tam="10" negrita="false" alinear="izquierda">{{emisor.nombre}}
 {{emisor.nif}}
 {{emisor.direccion}}</texto>

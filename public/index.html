@@ -62,6 +62,17 @@
   .aviso { color: var(--aviso); font-size: 12px; }
   .col { border: 1px solid var(--linea); border-radius: 6px; padding: 6px; margin-bottom: 6px; }
   .col .fila { margin-bottom: 4px; }
+  .col-cab { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .grip {
+    width: 24px; height: 24px; flex: none; display: inline-flex; flex-direction: column;
+    justify-content: center; align-items: center; gap: 4px; border-radius: 4px;
+    cursor: grab; touch-action: none;
+  }
+  .grip::before, .grip::after { content: ''; width: 14px; height: 2px; border-radius: 1px; background: var(--suave); }
+  .grip:hover { background: #eef2ff; }
+  .grip:hover::before, .grip:hover::after { background: var(--acento); }
+  .col.arrastrando { opacity: .75; background: #eff6ff; border-color: var(--acento); box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+  body.ordenando, body.ordenando * { cursor: grabbing !important; user-select: none; }
   #xml { width: 100%; height: 220px; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; }
   button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--linea); }
   #p-estado { font-weight: 600; color: var(--texto); }
@@ -200,7 +211,9 @@ let doc = plantillaEjemplo();
 let sel = null;                     // id de elemento, 'cuerpo' o null
 let zoom = 1;
 let drag = null;
-const vistas = {};                  // vista previa de imágenes: nombre -> dataURL (no se exporta)
+const TIPOS_IMAGEN = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
+const MAX_IMAGEN = 500 * 1024;      // bytes por imagen; se guarda en base64 dentro del XML
+const urlsImagen = new Map();       // base64 -> URL de blob (evita redecodificar al arrastrar)
 const refs = {};                    // inputs del panel que se sincronizan al arrastrar
 
 const $ = (s) => document.querySelector(s);
@@ -237,7 +250,7 @@ function plantillaEjemplo() {
   const d = plantillaVacia();
   d.nombre = 'factura';
   d.elementos = [
-    el('logo', 15, 10, 40, 20, { src: 'logo.png' }),
+    el('logo', 15, 10, 40, 20, { nombre: 'logo.png', mime: '', datos: '' }),
     el('texto', 65, 10, 70, 20, { texto: '{{emisor.nombre}}\n{{emisor.nif}}\n{{emisor.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
     el('texto', 140, 10, 55, 14, { texto: 'Factura nº {{numero}}\nFecha: {{fecha}}', tam: 11, negrita: true, alinear: 'derecha' }),
     el('texto', 110, 35, 85, 25, { texto: '{{cliente.nombre}}\n{{cliente.nif}}\n{{cliente.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
@@ -284,8 +297,10 @@ function mensaje(txt, esError) {
 function elementoXML(e) {
   const p = `x="${num(e.x)}" y="${num(e.y)}"`;
   switch (e.tipo) {
-    case 'logo':
-      return `    <logo src="${esc(e.src || '')}" ${p} ancho="${num(e.w)}" alto="${num(e.h)}"/>\n`;
+    case 'logo': {
+      const a = `nombre="${esc(e.nombre || '')}"${e.datos ? ` tipo="${esc(e.mime)}"` : ''} ${p} ancho="${num(e.w)}" alto="${num(e.h)}"`;
+      return e.datos ? `    <logo ${a}>${e.datos}</logo>\n` : `    <logo ${a}/>\n`;
+    }
     case 'texto':
       return `    <texto ${p} ancho="${num(e.w)}" alto="${num(e.h)}" tam="${num(e.tam)}" negrita="${e.negrita ? 'true' : 'false'}" alinear="${e.alinear}">${esc(e.texto || '')}</texto>\n`;
     case 'linea':
@@ -351,7 +366,14 @@ function fromXML(texto) {
     for (const c of Array.from(banda.children)) {
       const base = { x: n(c, 'x', 0), y: n(c, 'y', 0) };
       if (c.nodeName === 'logo') {
-        nuevo.elementos.push(el('logo', base.x, base.y, n(c, 'ancho', 40), n(c, 'alto', 20), { src: s(c, 'src', '') }));
+        const datos = c.textContent.replace(/\s+/g, '');
+        const mime = s(c, 'tipo', '');
+        if (datos !== '' && (!TIPOS_IMAGEN.includes(mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(datos))) {
+          throw new Error('La imagen de un logo no es válida (tipo o base64 incorrecto).');
+        }
+        nuevo.elementos.push(el('logo', base.x, base.y, n(c, 'ancho', 40), n(c, 'alto', 20), {
+          nombre: s(c, 'nombre', s(c, 'src', '')), mime: datos ? mime : '', datos,
+        }));
       } else if (c.nodeName === 'texto') {
         nuevo.elementos.push(el('texto', base.x, base.y, n(c, 'ancho', 50), n(c, 'alto', 10), {
           texto: c.textContent, tam: n(c, 'tam', 10), negrita: s(c, 'negrita', 'false') === 'true',
@@ -401,6 +423,8 @@ function commit() {
   hist = hist.slice(0, hi + 1);
   hist.push(s);
   if (hist.length > 100) hist.shift();
+  // Con imágenes en base64 cada instantánea pesa; se limita la memoria del historial.
+  while (hist.length > 1 && hist.reduce((a, x) => a + x.length, 0) > 20e6) hist.shift();
   hi = hist.length - 1;
   refrescarXML();
   guardarSesion();
@@ -528,6 +552,23 @@ function render() {
 
 function alineacion(a) { return a === 'centro' ? 'center' : a === 'derecha' ? 'right' : 'left'; }
 
+// URL de blob para mostrar la imagen base64 de un logo (con caché por contenido).
+function urlImagen(e) {
+  let u = urlsImagen.get(e.datos);
+  if (u === undefined) {
+    try {
+      const bin = atob(e.datos);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      u = URL.createObjectURL(new Blob([bytes], { type: e.mime }));
+    } catch (err) {
+      u = '';
+    }
+    urlsImagen.set(e.datos, u);
+  }
+  return u;
+}
+
 function dibujarElemento(e) {
   const s = S();
   const esSel = sel === e.id;
@@ -546,12 +587,13 @@ function dibujarElemento(e) {
       c.style.textAlign = alineacion(e.alinear);
       c.style.lineHeight = '1.2';
     } else if (e.tipo === 'logo') {
-      if (e.src && vistas[e.src]) {
+      const url = e.datos ? urlImagen(e) : '';
+      if (url) {
         const img = document.createElement('img');
-        img.src = vistas[e.src]; img.draggable = false;
+        img.src = url; img.draggable = false;
         c.appendChild(img);
       } else {
-        c.textContent = 'LOGO\n' + (e.src || '(sin nombre)');
+        c.textContent = 'LOGO\n' + (e.nombre || '(sin imagen)');
       }
     } else if (e.tipo === 'rectangulo') {
       c.style.border = Math.max(1, e.grosor * s) + 'px solid #000';
@@ -664,7 +706,7 @@ function anadir(tipo) {
   const m = doc.margen;
   const x = snap(m.izquierda + 10), y = snap(m.superior + 10);
   let e;
-  if (tipo === 'logo') e = el('logo', x, y, 40, 20, { src: '' });
+  if (tipo === 'logo') e = el('logo', x, y, 40, 20, { nombre: '', mime: '', datos: '' });
   else if (tipo === 'texto') e = el('texto', x, y, 60, 10, { texto: 'Texto {{campo}}', tam: 10, negrita: false, alinear: 'izquierda' });
   else if (tipo === 'linea') e = el('linea', x, y, 80, 0, { grosor: 0.3 });
   else e = el('rectangulo', x, y, 50, 15, { grosor: 0.3, relleno: '' });
@@ -835,12 +877,24 @@ function panelElemento() {
     panel.appendChild(fila(campo('Datos (lista del JSON)', 'text', doc.datos, (v) => { doc.datos = v; })));
     const suma = doc.columnas.reduce((a, c) => a + (+c.ancho || 0), 0);
     panel.appendChild(nota(r2(suma) === 100 ? 'Anchos: suman 100 %.' : `Anchos: suman ${r2(suma)} %, deberían sumar 100.`, r2(suma) === 100 ? 'ayuda' : 'aviso'));
+    const contCols = document.createElement('div');
     doc.columnas.forEach((c, i) => {
       const caja = document.createElement('div');
       caja.className = 'col';
+      caja.dataset.i = i;
+      const cab = document.createElement('div');
+      cab.className = 'col-cab';
+      const grip = document.createElement('span');
+      grip.className = 'grip';
+      grip.title = 'Arrastra para cambiar el orden';
+      grip.addEventListener('pointerdown', (ev) => iniciarOrden(ev, contCols, caja));
+      const nombreCol = document.createElement('strong');
+      nombreCol.textContent = c.titulo || '(sin título)';
+      cab.append(grip, nombreCol);
+      caja.appendChild(cab);
       caja.appendChild(fila(
         campo('Campo', 'text', c.campo, (v) => { c.campo = v; }),
-        campo('Título', 'text', c.titulo, (v) => { c.titulo = v; }),
+        campo('Título', 'text', c.titulo, (v) => { c.titulo = v; nombreCol.textContent = v || '(sin título)'; }),
       ));
       caja.appendChild(fila(
         campo('Ancho %', 'number', c.ancho, (v) => { c.ancho = v; }),
@@ -852,8 +906,9 @@ function panelElemento() {
       q.textContent = 'Quitar columna'; q.className = 'peligro';
       q.addEventListener('click', () => { doc.columnas.splice(i, 1); panelElemento(); render(); commit(); });
       caja.appendChild(q);
-      panel.appendChild(caja);
+      contCols.appendChild(caja);
     });
+    panel.appendChild(contCols);
     const a = document.createElement('button');
     a.textContent = '+ Añadir columna';
     a.addEventListener('click', () => {
@@ -891,12 +946,20 @@ function panelElemento() {
         l.append(c, 'Negrita');
         panel.appendChild(l);
       } else if (e.tipo === 'logo') {
-        panel.appendChild(fila(campo('Archivo (src)', 'text', e.src || '', (v) => { e.src = v; })));
+        panel.appendChild(fila(campo('Nombre del archivo', 'text', e.nombre || '', (v) => { e.nombre = v; })));
         const b = document.createElement('button');
-        b.textContent = 'Vista previa de imagen…';
+        b.textContent = e.datos ? 'Cambiar imagen…' : 'Cargar imagen…';
         b.addEventListener('click', () => $('#f-imagen').click());
         panel.appendChild(b);
-        panel.appendChild(nota('La imagen solo se usa para la vista previa; el XML guarda el nombre del archivo.'));
+        if (e.datos) {
+          const q = document.createElement('button');
+          q.textContent = 'Quitar imagen'; q.className = 'peligro';
+          q.addEventListener('click', () => { e.datos = ''; e.mime = ''; render(); panelElemento(); commit(); });
+          panel.append(' ', q);
+        }
+        panel.appendChild(nota(e.datos
+          ? `Imagen dentro del XML en base64 (${e.mime}, ${Math.round(e.datos.length * 3 / 4 / 1024)} KB).`
+          : `Sin imagen. Al cargarla se guarda dentro del XML en base64 (máx. ${MAX_IMAGEN / 1024} KB).`));
       } else if (e.tipo === 'linea') {
         panel.appendChild(fila(campo('Grosor (mm)', 'number', e.grosor, (v) => { e.grosor = Math.max(0.1, v); })));
       } else if (e.tipo === 'rectangulo') {
@@ -922,6 +985,43 @@ function panelElemento() {
   panel.appendChild(ap);
 }
 
+// Reordenar columnas arrastrando el asa de dos líneas.
+function iniciarOrden(ev, cont, caja) {
+  if (ev.button !== undefined && ev.button !== 0) return;
+  ev.preventDefault();
+  caja.classList.add('arrastrando');
+  document.body.classList.add('ordenando');
+  const mover = (e) => {
+    const pr = panel.getBoundingClientRect();
+    if (e.clientY < pr.top + 30) panel.scrollTop -= 12;
+    else if (e.clientY > pr.bottom - 30) panel.scrollTop += 12;
+    const otras = Array.from(cont.children).filter((c) => c !== caja);
+    let destino = null;
+    for (const c of otras) {
+      const r = c.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { destino = c; break; }
+    }
+    if (destino !== caja.nextElementSibling) cont.insertBefore(caja, destino);
+  };
+  const fin = () => {
+    window.removeEventListener('pointermove', mover);
+    window.removeEventListener('pointerup', fin);
+    window.removeEventListener('pointercancel', fin);
+    caja.classList.remove('arrastrando');
+    document.body.classList.remove('ordenando');
+    const orden = Array.from(cont.children).map((c) => +c.dataset.i);
+    if (orden.some((v, i) => v !== i)) {
+      doc.columnas = orden.map((i) => doc.columnas[i]);
+      panelElemento();
+      render();
+      commit();
+    }
+  };
+  window.addEventListener('pointermove', mover);
+  window.addEventListener('pointerup', fin);
+  window.addEventListener('pointercancel', fin);
+}
+
 function refrescarXML() {
   const ta = $('#xml');
   if (ta && document.activeElement !== ta) ta.value = toXML();
@@ -932,11 +1032,22 @@ $('#f-imagen').addEventListener('change', (ev) => {
   ev.target.value = '';
   const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
   if (!f || !e || e.tipo !== 'logo') return;
+  if (!TIPOS_IMAGEN.includes(f.type)) {
+    mensaje('Formato de imagen no admitido (usa PNG, JPG, GIF, WebP o SVG).', true);
+    return;
+  }
+  if (f.size > MAX_IMAGEN) {
+    mensaje(`La imagen pesa ${Math.round(f.size / 1024)} KB y el máximo es ${MAX_IMAGEN / 1024} KB. Reduce su tamaño.`, true);
+    return;
+  }
   const lector = new FileReader();
   lector.onload = () => {
-    if (!e.src) e.src = f.name;
-    vistas[e.src] = String(lector.result);
+    const r = String(lector.result);
+    e.datos = r.slice(r.indexOf(',') + 1);
+    e.mime = f.type;
+    e.nombre = f.name;
     render(); panelElemento(); commit();
+    mensaje(`Imagen «${f.name}» incluida en el XML (base64).`);
   };
   lector.readAsDataURL(f);
 });
@@ -968,6 +1079,11 @@ async function api(metodo, ruta, cuerpo) {
 const urlPlantilla = (nombre) => 'plantillas/' + encodeURIComponent(nombre);
 
 async function detectarServidor() {
+  if (location.protocol === 'file:') {      // abierto como archivo: no hay API
+    servidor = false;
+    actualizarEstado();
+    return;
+  }
   try {
     const r = await api('GET', 'plantillas');
     servidor = !!(r && Array.isArray(r.plantillas));

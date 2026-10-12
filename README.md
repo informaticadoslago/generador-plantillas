@@ -16,6 +16,8 @@ Abre http://localhost:8000. La base de datos se crea sola en `datos/plantillas.s
 
 - Página A4 a tamaño real, en milímetros, con puntos cada 5 mm.
 - Elementos: logo, texto (con `{{campo}}`), línea y rectángulo; tabla del cuerpo con columnas editables.
+- La imagen del logo se guarda dentro del XML en base64 (máx. 500 KB).
+- Las columnas del cuerpo se reordenan arrastrando el asa de dos líneas.
 - Arrastrar, redimensionar con el asa, imán a la rejilla (Alt = ajuste fino), flechas, duplicar, eliminar, deshacer/rehacer.
 - **Guardar** (Ctrl+S) en el servidor y **Plantillas** con la lista guardada: abrir, descargar XML, duplicar y borrar.
 - **Exportar XML** / **Importar XML**, y un cuadro con el XML en vivo que se puede editar y aplicar.

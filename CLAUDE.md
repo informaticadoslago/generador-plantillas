@@ -33,6 +33,8 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 - **Plantillas** abre la lista guardada en el servidor: abrir, descargar XML, duplicar y borrar, con filtro por nombre.
 - Cambiar el nombre de la plantilla y guardar crea una plantilla nueva (guardar como). Si el nombre ya existe en el servidor, se rechaza.
 - **Exportar XML** descarga lo que hay en pantalla; el botón XML de la lista descarga lo guardado en el servidor.
+- **Logo**: «Cargar imagen…» en el panel del elemento guarda la imagen en base64 dentro del XML (y se guarda con la plantilla en el servidor).
+- **Columnas del cuerpo**: se reordenan arrastrando el asa de dos líneas de cada columna en el panel (clic en el cuerpo para verlas).
 
 ## Decisiones tomadas
 
@@ -52,7 +54,7 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
     <margen superior="25" inferior="20" izquierda="15" derecha="15"/>
   </pagina>
   <cabecera altura="70">
-    <logo src="logo.png" x="15" y="10" ancho="40" alto="20"/>
+    <logo nombre="logo.png" tipo="image/png" x="15" y="10" ancho="40" alto="20">iVBORw0KGgoAAAANSUhEUg...</logo>
     <texto x="65" y="10" ancho="70" alto="20" tam="10" negrita="false" alinear="izquierda">{{emisor.nombre}}</texto>
     <linea x="15" y="66" largo="180" grosor="0.3"/>
     <rectangulo x="15" y="30" ancho="50" alto="10" grosor="0.3" relleno="#eeeeee"/>
@@ -69,7 +71,8 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 
 - `x`, `y` van en mm **desde la esquina superior izquierda de la página** (provisional, ver decisiones abiertas).
 - `cabecera/@altura`: mm desde el borde superior. `pie/@altura`: mm desde el borde inferior. El cuerpo ocupa el espacio entre ambos.
-- `columna/@ancho` es un porcentaje del ancho útil; deben sumar 100.
+- **La imagen del logo va dentro del XML, en base64**, como contenido del elemento `<logo>`; `tipo` es el tipo MIME (PNG, JPEG, GIF, WebP o SVG) y `nombre` el nombre del archivo original. Sin imagen, `<logo>` va vacío y solo lleva `nombre`. El editor admite hasta 500 KB por imagen y la API hasta 5 MB de XML; ambos validan el tipo y el base64. Los XML antiguos con `src` se leen como `nombre`.
+- `columna/@ancho` es un porcentaje del ancho útil; deben sumar 100. El orden de los elementos `<columna>` es el orden de las columnas en la tabla.
 - Elementos admitidos en cabecera y pie: `logo`, `texto`, `linea`, `rectangulo`. El editor decide la banda de cada elemento según su posición vertical.
 
 ## Decisiones abiertas
