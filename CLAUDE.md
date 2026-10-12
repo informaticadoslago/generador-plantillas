@@ -69,6 +69,9 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 </plantilla>
 ```
 
+- `giro` (opcional, en cualquier elemento): grados en sentido horario alrededor del **centro** de la caja. `x`, `y`, `ancho`, `alto` describen la caja **sin girar**; el renderizado equivale a CSS `transform: rotate(Xdeg)` con origen en el centro. 90° = el texto se lee de arriba abajo; 270° = de abajo arriba. En el editor el elemento no puede salir de la página por arriba ni por la izquierda.
+- `texto` admite además `borde` (grosor en mm, 0 o ausente = sin borde) y `relleno` (`#rrggbb`).
+- **Marca de agua**: `<marca giro="315" opacidad="0.08">` es hija directa de `<plantilla>` (justo después de `<pagina>`), como máximo una. Ocupa toda la página, va detrás de todo y centra su contenido, que es un `<texto tam color negrita>` o un `<logo nombre tipo ancho>` con la imagen en base64 (el alto sale de la proporción). `opacidad` va de 0 a 1.
 - `x`, `y` van en mm **desde la esquina superior izquierda de la página** (provisional, ver decisiones abiertas).
 - `cabecera/@altura`: mm desde el borde superior. `pie/@altura`: mm desde el borde inferior. El cuerpo ocupa el espacio entre ambos.
 - **La imagen del logo va dentro del XML, en base64**, como contenido del elemento `<logo>`; `tipo` es el tipo MIME (PNG, JPEG, GIF, WebP o SVG) y `nombre` el nombre del archivo original. Sin imagen, `<logo>` va vacío y solo lleva `nombre`. El editor admite hasta 500 KB por imagen y la API hasta 5 MB de XML; ambos validan el tipo y el base64. Los XML antiguos con `src` se leen como `nombre`.

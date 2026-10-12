@@ -18,6 +18,8 @@ Abre http://localhost:8000. La base de datos se crea sola en `datos/plantillas.s
 - Elementos: logo, texto (con `{{campo}}`), línea y rectángulo; tabla del cuerpo con columnas editables.
 - La imagen del logo se guarda dentro del XML en base64 (máx. 500 KB).
 - Las columnas del cuerpo se reordenan arrastrando el asa de dos líneas.
+- Giro de cualquier elemento (botones, campo en grados o el círculo que sale encima): líneas verticales, texto en vertical, recuadros con borde y relleno.
+- **Marca de agua** a página completa, detrás de todo: texto o imagen (base64) girados y con opacidad casi total.
 - Arrastrar, redimensionar con el asa, imán a la rejilla (Alt = ajuste fino), flechas, duplicar, eliminar, deshacer/rehacer.
 - **Guardar** (Ctrl+S) en el servidor y **Plantillas** con la lista guardada: abrir, descargar XML, duplicar y borrar.
 - **Exportar XML** / **Importar XML**, y un cuadro con el XML en vivo que se puede editar y aplicar.
