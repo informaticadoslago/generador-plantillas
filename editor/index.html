@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor de plantillas</title>
+<style>
+  :root {
+    --bg: #e5e7eb; --panel: #ffffff; --linea: #d1d5db; --texto: #1f2937;
+    --suave: #6b7280; --acento: #2563eb; --aviso: #b45309; --error: #b91c1c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--texto); background: var(--bg);
+    display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 1fr 330px;
+    grid-template-areas: "barra barra" "lienzo panel" "estado panel";
+  }
+  #barra {
+    grid-area: barra; background: var(--panel); border-bottom: 1px solid var(--linea);
+    padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  #barra .sep { width: 1px; height: 22px; background: var(--linea); margin: 0 4px; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button {
+    background: #fff; border: 1px solid var(--linea); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--acento); }
+  button.principal { background: var(--acento); border-color: var(--acento); color: #fff; }
+  button.peligro:hover { border-color: var(--error); color: var(--error); }
+  #lienzo { grid-area: lienzo; overflow: auto; padding: 24px; }
+  #pagina {
+    position: relative; margin: 0 auto; background-color: #fff;
+    box-shadow: 0 2px 12px rgba(0,0,0,.25); user-select: none; touch-action: none;
+  }
+  #estado {
+    grid-area: estado; background: var(--panel); border-top: 1px solid var(--linea);
+    padding: 3px 10px; color: var(--suave); display: flex; gap: 16px; min-height: 24px;
+  }
+  #estado .error { color: var(--error); }
+  #panel {
+    grid-area: panel; background: var(--panel); border-left: 1px solid var(--linea);
+    overflow: auto; padding: 10px;
+  }
+  #panel h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave);
+    margin: 14px 0 6px; border-bottom: 1px solid var(--linea); padding-bottom: 3px;
+  }
+  #panel h2:first-child { margin-top: 0; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  .fila.una { grid-template-columns: 1fr; }
+  .fila.cuatro { grid-template-columns: repeat(4, 1fr); }
+  label.campo { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--suave); }
+  label.campo input, label.campo select, label.campo textarea {
+    font-size: 13px; color: var(--texto); padding: 3px 5px; border: 1px solid var(--linea);
+    border-radius: 4px; width: 100%; background: #fff;
+  }
+  label.check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .ayuda { color: var(--suave); font-size: 12px; }
+  .aviso { color: var(--aviso); font-size: 12px; }
+  .col { border: 1px solid var(--linea); border-radius: 6px; padding: 6px; margin-bottom: 6px; }
+  .col .fila { margin-bottom: 4px; }
+  #xml { width: 100%; height: 220px; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+
+  /* Elementos del lienzo */
+  .el { position: absolute; z-index: 2; cursor: move; outline: 1px dashed rgba(0,0,0,.22); overflow: visible; }
+  .el.sel { outline: 2px solid var(--acento); z-index: 5; }
+  .el .contenido { width: 100%; height: 100%; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+  .el.logo .contenido {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    background: repeating-linear-gradient(45deg, #f3f4f6, #f3f4f6 6px, #e5e7eb 6px, #e5e7eb 12px);
+    color: var(--suave); font-size: 11px;
+  }
+  .el.logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .el.linea { outline: none; }
+  .el.linea.sel { outline: 2px solid var(--acento); }
+  .el.linea .trazo { position: absolute; left: 0; right: 0; top: 50%; background: #000; }
+  .asa {
+    position: absolute; right: -6px; bottom: -6px; width: 11px; height: 11px;
+    background: var(--acento); border: 1px solid #fff; cursor: nwse-resize; z-index: 6;
+  }
+  .guia-margen { position: absolute; border: 1px dashed #e11d48; pointer-events: none; opacity: .55; }
+  .guia-banda { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--acento); pointer-events: none; opacity: .7; }
+  .guia-banda span {
+    position: absolute; left: 3px; top: -15px; font-size: 10px; color: var(--acento);
+    background: rgba(255,255,255,.85); padding: 0 3px;
+  }
+  .cuerpo-zona { position: absolute; overflow: hidden; cursor: pointer; background: rgba(37,99,235,.04); }
+  .cuerpo-zona.sel { outline: 2px solid var(--acento); z-index: 1; }
+  .cuerpo-zona table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .cuerpo-zona th, .cuerpo-zona td {
+    border-bottom: 1px solid #cbd5e1; padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .cuerpo-zona th { background: #e2e8f0; font-weight: 600; }
+  .cuerpo-zona td { color: #64748b; }
+</style>
+</head>
+<body>
+
+<div id="barra">
+  <button data-add="logo" title="Añadir logo o imagen">+ Logo</button>
+  <button data-add="texto" title="Añadir texto">+ Texto</button>
+  <button data-add="linea" title="Añadir línea horizontal">+ Línea</button>
+  <button data-add="rectangulo" title="Añadir rectángulo">+ Rectángulo</button>
+  <span class="sep"></span>
+  <button id="b-duplicar" title="Duplicar (Ctrl+D)">Duplicar</button>
+  <button id="b-eliminar" class="peligro" title="Eliminar (Supr)">Eliminar</button>
+  <span class="sep"></span>
+  <button id="b-deshacer" title="Deshacer (Ctrl+Z)">Deshacer</button>
+  <button id="b-rehacer" title="Rehacer (Ctrl+Y)">Rehacer</button>
+  <span class="sep"></span>
+  <label>Zoom
+    <select id="zoom">
+      <option value="0.5">50 %</option><option value="0.75">75 %</option>
+      <option value="1" selected>100 %</option><option value="1.25">125 %</option>
+      <option value="1.5">150 %</option><option value="2">200 %</option>
+    </select>
+  </label>
+  <span class="sep"></span>
+  <button id="b-nueva">Nueva</button>
+  <button id="b-ejemplo">Ejemplo factura</button>
+  <button id="b-importar">Importar XML</button>
+  <button id="b-exportar" class="principal">Exportar XML</button>
+  <input type="file" id="f-importar" accept=".xml,text/xml,application/xml" hidden>
+  <input type="file" id="f-imagen" accept="image/*" hidden>
+</div>
+
+<div id="lienzo"><div id="pagina"></div></div>
+
+<div id="estado"><span id="coords">&nbsp;</span><span id="mensaje"></span></div>
+
+<div id="panel"></div>
+
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/*  Constantes y estado                                                */
+/* ------------------------------------------------------------------ */
+const MM = 96 / 25.4;               // píxeles de pantalla por mm (zoom 1)
+const PT = 25.4 / 72;               // mm por punto tipográfico
+const FORMATOS = { A3: [297, 420], A4: [210, 297], A5: [148, 210] };
+const CLAVE_LS = 'editor-plantillas:borrador';
+
+let uid = 1;
+let doc = plantillaEjemplo();
+let sel = null;                     // id de elemento, 'cuerpo' o null
+let zoom = 1;
+let drag = null;
+const vistas = {};                  // vista previa de imágenes: nombre -> dataURL (no se exporta)
+const refs = {};                    // inputs del panel que se sincronizan al arrastrar
+
+const $ = (s) => document.querySelector(s);
+const pagina = $('#pagina');
+const panel = $('#panel');
+
+function nuevoId() { return 'e' + (uid++); }
+
+function columnasPorDefecto() {
+  return [
+    { campo: 'concepto', titulo: 'Concepto', ancho: 46, alinear: 'izquierda', formato: '' },
+    { campo: 'cantidad', titulo: 'Cant.', ancho: 10, alinear: 'derecha', formato: '' },
+    { campo: 'precio', titulo: 'Precio', ancho: 14, alinear: 'derecha', formato: 'moneda' },
+    { campo: 'iva', titulo: 'IVA %', ancho: 12, alinear: 'derecha', formato: '' },
+    { campo: 'importe', titulo: 'Importe', ancho: 18, alinear: 'derecha', formato: 'moneda' },
+  ];
+}
+
+function plantillaVacia() {
+  return {
+    nombre: 'nueva', formato: 'A4', orientacion: 'vertical',
+    margen: { superior: 25, inferior: 20, izquierda: 15, derecha: 15 },
+    cabAlt: 70, pieAlt: 55, datos: 'lineas',
+    columnas: columnasPorDefecto(), elementos: [],
+    paso: 5,
+  };
+}
+
+function el(tipo, x, y, w, h, extra) {
+  return Object.assign({ id: nuevoId(), tipo, x, y, w, h }, extra);
+}
+
+function plantillaEjemplo() {
+  const d = plantillaVacia();
+  d.nombre = 'factura';
+  d.elementos = [
+    el('logo', 15, 10, 40, 20, { src: 'logo.png' }),
+    el('texto', 65, 10, 70, 20, { texto: '{{emisor.nombre}}\n{{emisor.nif}}\n{{emisor.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
+    el('texto', 140, 10, 55, 14, { texto: 'Factura nº {{numero}}\nFecha: {{fecha}}', tam: 11, negrita: true, alinear: 'derecha' }),
+    el('texto', 110, 35, 85, 25, { texto: '{{cliente.nombre}}\n{{cliente.nif}}\n{{cliente.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
+    el('linea', 15, 66, 180, 0, { grosor: 0.3 }),
+    el('texto', 120, 245, 75, 20, { texto: 'Base imponible: {{totales.base}}\nIVA: {{totales.iva}}\nTOTAL: {{totales.total}}', tam: 11, negrita: true, alinear: 'derecha' }),
+    el('texto', 15, 268, 180, 9, { texto: 'Forma de pago: {{formaPago}}. {{textoLegal}}', tam: 8, negrita: false, alinear: 'izquierda' }),
+  ];
+  return d;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Utilidades                                                         */
+/* ------------------------------------------------------------------ */
+function dims() {
+  const [a, b] = FORMATOS[doc.formato] || FORMATOS.A4;
+  return doc.orientacion === 'horizontal' ? [b, a] : [a, b];
+}
+function S() { return MM * zoom; }
+function r2(v) { return Math.round(v * 100) / 100; }
+function snap(v, paso) {
+  const p = paso === undefined ? doc.paso : paso;
+  return p > 0 ? r2(Math.round(v / p) * p) : r2(v);
+}
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function num(v) { return String(r2(+v)); }
+function porId(id) { return doc.elementos.find((e) => e.id === id); }
+function banda(e) {
+  const [, H] = dims();
+  const centro = e.y + (e.tipo === 'linea' ? 0 : e.h / 2);
+  const medio = (doc.cabAlt + (H - doc.pieAlt)) / 2;
+  return centro < medio ? 'cabecera' : 'pie';
+}
+function mensaje(txt, esError) {
+  const m = $('#mensaje');
+  m.textContent = txt || '';
+  m.className = esError ? 'error' : '';
+}
+
+/* ------------------------------------------------------------------ */
+/*  XML: exportar e importar                                           */
+/* ------------------------------------------------------------------ */
+function elementoXML(e) {
+  const p = `x="${num(e.x)}" y="${num(e.y)}"`;
+  switch (e.tipo) {
+    case 'logo':
+      return `    <logo src="${esc(e.src || '')}" ${p} ancho="${num(e.w)}" alto="${num(e.h)}"/>\n`;
+    case 'texto':
+      return `    <texto ${p} ancho="${num(e.w)}" alto="${num(e.h)}" tam="${num(e.tam)}" negrita="${e.negrita ? 'true' : 'false'}" alinear="${e.alinear}">${esc(e.texto || '')}</texto>\n`;
+    case 'linea':
+      return `    <linea ${p} largo="${num(e.w)}" grosor="${num(e.grosor)}"/>\n`;
+    case 'rectangulo':
+      return `    <rectangulo ${p} ancho="${num(e.w)}" alto="${num(e.h)}" grosor="${num(e.grosor)}" relleno="${esc(e.relleno || '')}"/>\n`;
+  }
+  return '';
+}
+
+function toXML() {
+  const m = doc.margen;
+  let x = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  x += `<plantilla nombre="${esc(doc.nombre)}" version="1">\n`;
+  x += `  <pagina formato="${doc.formato}" orientacion="${doc.orientacion}" unidad="mm">\n`;
+  x += `    <margen superior="${num(m.superior)}" inferior="${num(m.inferior)}" izquierda="${num(m.izquierda)}" derecha="${num(m.derecha)}"/>\n`;
+  x += '  </pagina>\n';
+  x += `  <cabecera altura="${num(doc.cabAlt)}">\n`;
+  x += doc.elementos.filter((e) => banda(e) === 'cabecera').map(elementoXML).join('');
+  x += '  </cabecera>\n';
+  x += `  <cuerpo datos="${esc(doc.datos)}">\n`;
+  x += doc.columnas.map((c) =>
+    `    <columna campo="${esc(c.campo)}" titulo="${esc(c.titulo)}" ancho="${num(c.ancho)}" alinear="${c.alinear}" formato="${esc(c.formato || '')}"/>\n`).join('');
+  x += '  </cuerpo>\n';
+  x += `  <pie altura="${num(doc.pieAlt)}">\n`;
+  x += doc.elementos.filter((e) => banda(e) === 'pie').map(elementoXML).join('');
+  x += '  </pie>\n';
+  x += '</plantilla>\n';
+  return x;
+}
+
+function fromXML(texto) {
+  const d = new DOMParser().parseFromString(texto, 'application/xml');
+  if (d.getElementsByTagName('parsererror').length) throw new Error('El XML está mal formado.');
+  const raiz = d.documentElement;
+  if (raiz.nodeName !== 'plantilla') throw new Error('El elemento raíz debe ser <plantilla>.');
+
+  const nuevo = plantillaVacia();
+  const n = (nodo, a, def) => {
+    const v = parseFloat(nodo.getAttribute(a));
+    return Number.isFinite(v) ? v : def;
+  };
+  const s = (nodo, a, def) => (nodo.hasAttribute(a) ? nodo.getAttribute(a) : def);
+  const hijo = (nodo, nombre) => Array.from(nodo.children).find((c) => c.nodeName === nombre);
+
+  nuevo.nombre = s(raiz, 'nombre', 'sin-nombre');
+  const pg = hijo(raiz, 'pagina');
+  if (pg) {
+    const f = s(pg, 'formato', 'A4');
+    nuevo.formato = FORMATOS[f] ? f : 'A4';
+    nuevo.orientacion = s(pg, 'orientacion', 'vertical') === 'horizontal' ? 'horizontal' : 'vertical';
+    const mg = hijo(pg, 'margen');
+    if (mg) {
+      nuevo.margen = {
+        superior: n(mg, 'superior', 25), inferior: n(mg, 'inferior', 20),
+        izquierda: n(mg, 'izquierda', 15), derecha: n(mg, 'derecha', 15),
+      };
+    }
+  }
+
+  const leerElementos = (banda) => {
+    if (!banda) return;
+    for (const c of Array.from(banda.children)) {
+      const base = { x: n(c, 'x', 0), y: n(c, 'y', 0) };
+      if (c.nodeName === 'logo') {
+        nuevo.elementos.push(el('logo', base.x, base.y, n(c, 'ancho', 40), n(c, 'alto', 20), { src: s(c, 'src', '') }));
+      } else if (c.nodeName === 'texto') {
+        nuevo.elementos.push(el('texto', base.x, base.y, n(c, 'ancho', 50), n(c, 'alto', 10), {
+          texto: c.textContent, tam: n(c, 'tam', 10), negrita: s(c, 'negrita', 'false') === 'true',
+          alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
+        }));
+      } else if (c.nodeName === 'linea') {
+        nuevo.elementos.push(el('linea', base.x, base.y, n(c, 'largo', 50), 0, { grosor: n(c, 'grosor', 0.3) }));
+      } else if (c.nodeName === 'rectangulo') {
+        nuevo.elementos.push(el('rectangulo', base.x, base.y, n(c, 'ancho', 40), n(c, 'alto', 20), {
+          grosor: n(c, 'grosor', 0.3), relleno: s(c, 'relleno', ''),
+        }));
+      }
+    }
+  };
+
+  const cab = hijo(raiz, 'cabecera');
+  const pie = hijo(raiz, 'pie');
+  if (cab) nuevo.cabAlt = n(cab, 'altura', nuevo.cabAlt);
+  if (pie) nuevo.pieAlt = n(pie, 'altura', nuevo.pieAlt);
+  leerElementos(cab);
+  const cu = hijo(raiz, 'cuerpo');
+  if (cu) {
+    nuevo.datos = s(cu, 'datos', 'lineas');
+    const cols = Array.from(cu.children).filter((c) => c.nodeName === 'columna');
+    if (cols.length) {
+      nuevo.columnas = cols.map((c) => ({
+        campo: s(c, 'campo', ''), titulo: s(c, 'titulo', ''), ancho: n(c, 'ancho', 10),
+        alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
+        formato: s(c, 'formato', ''),
+      }));
+    }
+  }
+  leerElementos(pie);
+  return nuevo;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Historial y borrador                                               */
+/* ------------------------------------------------------------------ */
+let hist = [];
+let hi = -1;
+let temporizador = null;
+
+function commit() {
+  const s = JSON.stringify(doc);
+  if (hist[hi] === s) return;
+  hist = hist.slice(0, hi + 1);
+  hist.push(s);
+  if (hist.length > 100) hist.shift();
+  hi = hist.length - 1;
+  refrescarXML();
+  try { localStorage.setItem(CLAVE_LS, toXML()); } catch (e) { /* sin almacenamiento */ }
+}
+function commitDiferido() {
+  clearTimeout(temporizador);
+  temporizador = setTimeout(commit, 350);
+}
+function deshacer() {
+  clearTimeout(temporizador); commit();
+  if (hi > 0) { hi--; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); }
+}
+function rehacer() {
+  if (hi < hist.length - 1) { hi++; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Dibujo del lienzo                                                  */
+/* ------------------------------------------------------------------ */
+function div(clase, estilo) {
+  const d = document.createElement('div');
+  if (clase) d.className = clase;
+  if (estilo) Object.assign(d.style, estilo);
+  return d;
+}
+const px = (mm) => (mm * S()) + 'px';
+
+function render() {
+  const [W, H] = dims();
+  const s = S();
+  pagina.innerHTML = '';
+  pagina.style.width = px(W);
+  pagina.style.height = px(H);
+  const r = 0.35 * s;
+  pagina.style.backgroundImage = `radial-gradient(circle, #8a8f98 ${r}px, transparent ${r + 0.7}px)`;
+  pagina.style.backgroundSize = `${5 * s}px ${5 * s}px`;
+  pagina.style.backgroundPosition = `${-2.5 * s}px ${-2.5 * s}px`;
+
+  const m = doc.margen;
+  pagina.appendChild(div('guia-margen', {
+    left: px(m.izquierda), top: px(m.superior),
+    width: px(W - m.izquierda - m.derecha), height: px(H - m.superior - m.inferior),
+  }));
+
+  // Zona del cuerpo
+  const cTop = doc.cabAlt, cAlt = Math.max(0, H - doc.pieAlt - doc.cabAlt);
+  const zona = div('cuerpo-zona' + (sel === 'cuerpo' ? ' sel' : ''), {
+    left: px(m.izquierda), top: px(cTop), width: px(W - m.izquierda - m.derecha), height: px(cAlt),
+  });
+  zona.dataset.cuerpo = '1';
+  const fs = (9 * PT * s) + 'px';
+  const tabla = document.createElement('table');
+  tabla.style.fontSize = fs;
+  const cg = document.createElement('colgroup');
+  const total = doc.columnas.reduce((a, c) => a + (+c.ancho || 0), 0) || 1;
+  doc.columnas.forEach((c) => {
+    const col = document.createElement('col');
+    col.style.width = ((+c.ancho || 0) / total * 100) + '%';
+    cg.appendChild(col);
+  });
+  tabla.appendChild(cg);
+  const th = tabla.createTHead().insertRow();
+  doc.columnas.forEach((c) => {
+    const t = document.createElement('th');
+    t.textContent = c.titulo; t.style.textAlign = alineacion(c.alinear);
+    th.appendChild(t);
+  });
+  const tb = tabla.createTBody();
+  for (let i = 0; i < 3; i++) {
+    const fila = tb.insertRow();
+    doc.columnas.forEach((c) => {
+      const t = fila.insertCell();
+      t.textContent = '{' + c.campo + '}'; t.style.textAlign = alineacion(c.alinear);
+    });
+  }
+  zona.appendChild(tabla);
+  pagina.appendChild(zona);
+
+  // Guías de banda
+  const g1 = div('guia-banda', { top: px(doc.cabAlt) });
+  g1.innerHTML = '<span>Cabecera ↑ · Cuerpo ↓</span>';
+  const g2 = div('guia-banda', { top: px(H - doc.pieAlt) });
+  g2.innerHTML = '<span>Cuerpo ↑ · Pie ↓</span>';
+  pagina.append(g1, g2);
+
+  // Elementos
+  doc.elementos.forEach((e) => pagina.appendChild(dibujarElemento(e)));
+}
+
+function alineacion(a) { return a === 'centro' ? 'center' : a === 'derecha' ? 'right' : 'left'; }
+
+function dibujarElemento(e) {
+  const s = S();
+  const esSel = sel === e.id;
+  let caja;
+  if (e.tipo === 'linea') {
+    const alto = Math.max(2.5, e.grosor + 1.5);
+    caja = div('el linea' + (esSel ? ' sel' : ''), { left: px(e.x), top: px(e.y - alto / 2), width: px(e.w), height: px(alto) });
+    caja.appendChild(div('trazo', { height: Math.max(1, e.grosor * s) + 'px', marginTop: -Math.max(1, e.grosor * s) / 2 + 'px' }));
+  } else {
+    caja = div('el ' + e.tipo + (esSel ? ' sel' : ''), { left: px(e.x), top: px(e.y), width: px(e.w), height: px(e.h) });
+    const c = div('contenido');
+    if (e.tipo === 'texto') {
+      c.textContent = e.texto;
+      c.style.fontSize = (e.tam * PT * s) + 'px';
+      c.style.fontWeight = e.negrita ? '700' : '400';
+      c.style.textAlign = alineacion(e.alinear);
+      c.style.lineHeight = '1.2';
+    } else if (e.tipo === 'logo') {
+      if (e.src && vistas[e.src]) {
+        const img = document.createElement('img');
+        img.src = vistas[e.src]; img.draggable = false;
+        c.appendChild(img);
+      } else {
+        c.textContent = 'LOGO\n' + (e.src || '(sin nombre)');
+      }
+    } else if (e.tipo === 'rectangulo') {
+      c.style.border = Math.max(1, e.grosor * s) + 'px solid #000';
+      if (e.relleno) c.style.background = e.relleno;
+    }
+    caja.appendChild(c);
+  }
+  caja.dataset.id = e.id;
+  if (esSel) {
+    const asa = div('asa');
+    asa.dataset.asa = '1';
+    caja.appendChild(asa);
+  }
+  return caja;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Interacción: seleccionar, mover, redimensionar                     */
+/* ------------------------------------------------------------------ */
+function seleccionar(id) {
+  const cambio = sel !== id;
+  sel = id;
+  render();
+  if (cambio) panelElemento();
+}
+
+pagina.addEventListener('pointerdown', (ev) => {
+  if (ev.button !== 0) return;
+  const asa = ev.target.closest('[data-asa]');
+  const caja = ev.target.closest('.el');
+  if (caja) {
+    const e = porId(caja.dataset.id);
+    if (!e) return;
+    iniciarDrag(ev, e, asa ? 'tamano' : 'mover');
+  } else if (ev.target.closest('[data-cuerpo]')) {
+    seleccionar('cuerpo');
+  } else {
+    seleccionar(null);
+  }
+});
+
+function iniciarDrag(ev, e, modo) {
+  ev.preventDefault();
+  seleccionar(e.id);
+  drag = { id: e.id, modo, sx: ev.clientX, sy: ev.clientY, ox: e.x, oy: e.y, ow: e.w, oh: e.h, movido: false };
+  window.addEventListener('pointermove', moverDrag);
+  window.addEventListener('pointerup', terminarDrag);
+}
+function moverDrag(ev) {
+  if (!drag) return;
+  const e = porId(drag.id);
+  if (!e) return;
+  const s = S();
+  const dx = (ev.clientX - drag.sx) / s, dy = (ev.clientY - drag.sy) / s;
+  if (!drag.movido && Math.hypot(dx, dy) * s < 3) return;
+  drag.movido = true;
+  const paso = ev.altKey ? 0.5 : doc.paso;     // Alt: ajuste fino
+  if (drag.modo === 'mover') {
+    e.x = Math.max(0, snap(drag.ox + dx, paso));
+    e.y = Math.max(0, snap(drag.oy + dy, paso));
+  } else {
+    const minimo = paso > 0 ? paso : 1;
+    e.w = Math.max(minimo, snap(drag.ow + dx, paso));
+    if (e.tipo !== 'linea') e.h = Math.max(minimo, snap(drag.oh + dy, paso));
+  }
+  render();
+  sincronizarGeometria(e);
+}
+function terminarDrag() {
+  window.removeEventListener('pointermove', moverDrag);
+  window.removeEventListener('pointerup', terminarDrag);
+  if (drag && drag.movido) commit();
+  drag = null;
+}
+function sincronizarGeometria(e) {
+  for (const k of ['x', 'y', 'w', 'h']) if (refs[k]) refs[k].value = e[k];
+}
+
+pagina.addEventListener('pointermove', (ev) => {
+  const r = pagina.getBoundingClientRect();
+  const x = (ev.clientX - r.left) / S(), y = (ev.clientY - r.top) / S();
+  $('#coords').textContent = `x: ${x.toFixed(1)} mm   y: ${y.toFixed(1)} mm`;
+});
+
+window.addEventListener('keydown', (ev) => {
+  const t = ev.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  if (ctrl && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? rehacer() : deshacer(); return; }
+  if (ctrl && ev.key.toLowerCase() === 'y') { ev.preventDefault(); rehacer(); return; }
+  if (ctrl && ev.key.toLowerCase() === 'd') { ev.preventDefault(); duplicar(); return; }
+  const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
+  if (!e) return;
+  if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); eliminar(); return; }
+  const mov = ev.shiftKey ? 5 : 1;
+  const d = { ArrowLeft: [-mov, 0], ArrowRight: [mov, 0], ArrowUp: [0, -mov], ArrowDown: [0, mov] }[ev.key];
+  if (d) {
+    ev.preventDefault();
+    e.x = Math.max(0, r2(e.x + d[0])); e.y = Math.max(0, r2(e.y + d[1]));
+    render(); sincronizarGeometria(e); commitDiferido();
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Acciones                                                           */
+/* ------------------------------------------------------------------ */
+function anadir(tipo) {
+  const m = doc.margen;
+  const x = snap(m.izquierda + 10), y = snap(m.superior + 10);
+  let e;
+  if (tipo === 'logo') e = el('logo', x, y, 40, 20, { src: '' });
+  else if (tipo === 'texto') e = el('texto', x, y, 60, 10, { texto: 'Texto {{campo}}', tam: 10, negrita: false, alinear: 'izquierda' });
+  else if (tipo === 'linea') e = el('linea', x, y, 80, 0, { grosor: 0.3 });
+  else e = el('rectangulo', x, y, 50, 15, { grosor: 0.3, relleno: '' });
+  doc.elementos.push(e);
+  seleccionar(e.id);
+  commit();
+}
+function duplicar() {
+  const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
+  if (!e) return;
+  const c = JSON.parse(JSON.stringify(e));
+  c.id = nuevoId(); c.x = r2(c.x + 5); c.y = r2(c.y + 5);
+  doc.elementos.push(c);
+  seleccionar(c.id);
+  commit();
+}
+function eliminar() {
+  const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
+  if (!e) return;
+  doc.elementos = doc.elementos.filter((x) => x.id !== e.id);
+  sel = null;
+  todo();
+  commit();
+}
+
+document.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => anadir(b.dataset.add)));
+$('#b-duplicar').addEventListener('click', duplicar);
+$('#b-eliminar').addEventListener('click', eliminar);
+$('#b-deshacer').addEventListener('click', deshacer);
+$('#b-rehacer').addEventListener('click', rehacer);
+$('#zoom').addEventListener('change', (ev) => { zoom = parseFloat(ev.target.value); render(); });
+$('#b-nueva').addEventListener('click', () => {
+  if (!confirm('¿Descartar la plantilla actual y empezar una vacía?')) return;
+  doc = plantillaVacia(); sel = null; todo(); commit();
+});
+$('#b-ejemplo').addEventListener('click', () => {
+  if (!confirm('¿Descartar la plantilla actual y cargar el ejemplo de factura?')) return;
+  doc = plantillaEjemplo(); sel = null; todo(); commit();
+});
+$('#b-exportar').addEventListener('click', () => {
+  const blob = new Blob([toXML()], { type: 'application/xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (doc.nombre || 'plantilla').replace(/[^\w.-]+/g, '_') + '.xml';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  mensaje('XML exportado.');
+});
+$('#b-importar').addEventListener('click', () => $('#f-importar').click());
+$('#f-importar').addEventListener('change', (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  const lector = new FileReader();
+  lector.onload = () => aplicarXML(String(lector.result));
+  lector.readAsText(f);
+});
+
+function aplicarXML(texto) {
+  try {
+    doc = fromXML(texto);
+    sel = null;
+    todo();
+    commit();
+    mensaje('XML cargado.');
+    return true;
+  } catch (err) {
+    mensaje(err.message, true);
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Panel de propiedades                                               */
+/* ------------------------------------------------------------------ */
+function campo(etiqueta, tipo, valor, alCambiar, opciones) {
+  const l = document.createElement('label');
+  l.className = 'campo';
+  l.append(etiqueta);
+  let inp;
+  if (tipo === 'select') {
+    inp = document.createElement('select');
+    opciones.forEach(([v, t]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = t; inp.appendChild(o);
+    });
+    inp.value = String(valor);
+  } else if (tipo === 'textarea') {
+    inp = document.createElement('textarea');
+    inp.rows = 4; inp.value = valor;
+  } else {
+    inp = document.createElement('input');
+    inp.type = tipo; inp.value = valor;
+    if (tipo === 'number') inp.step = 'any';
+  }
+  inp.addEventListener('input', () => {
+    alCambiar(tipo === 'number' ? (inp.value === '' ? 0 : parseFloat(inp.value)) : inp.value);
+    render(); commitDiferido();
+  });
+  l.appendChild(inp);
+  l._inp = inp;
+  return l;
+}
+function fila(...hijos) {
+  const f = document.createElement('div');
+  f.className = 'fila' + (hijos.length === 1 ? ' una' : hijos.length === 4 ? ' cuatro' : '');
+  hijos.forEach((h) => f.appendChild(h));
+  return f;
+}
+function seccion(titulo) {
+  const h = document.createElement('h2');
+  h.textContent = titulo;
+  return h;
+}
+function nota(txt, clase) {
+  const p = document.createElement('p');
+  p.className = clase || 'ayuda'; p.textContent = txt;
+  return p;
+}
+
+function panelPlantilla(destino) {
+  const m = doc.margen;
+  destino.appendChild(seccion('Plantilla'));
+  destino.appendChild(fila(campo('Nombre', 'text', doc.nombre, (v) => { doc.nombre = v; })));
+  destino.appendChild(fila(
+    campo('Formato', 'select', doc.formato, (v) => { doc.formato = v; }, Object.keys(FORMATOS).map((k) => [k, k])),
+    campo('Orientación', 'select', doc.orientacion, (v) => { doc.orientacion = v; }, [['vertical', 'Vertical'], ['horizontal', 'Horizontal']]),
+  ));
+  destino.appendChild(fila(
+    campo('Margen sup. (mm)', 'number', m.superior, (v) => { m.superior = v; }),
+    campo('Margen inf. (mm)', 'number', m.inferior, (v) => { m.inferior = v; }),
+  ));
+  destino.appendChild(fila(
+    campo('Margen izq. (mm)', 'number', m.izquierda, (v) => { m.izquierda = v; }),
+    campo('Margen der. (mm)', 'number', m.derecha, (v) => { m.derecha = v; }),
+  ));
+  destino.appendChild(fila(
+    campo('Altura cabecera (mm)', 'number', doc.cabAlt, (v) => { doc.cabAlt = v; }),
+    campo('Altura pie (mm)', 'number', doc.pieAlt, (v) => { doc.pieAlt = v; }),
+  ));
+  destino.appendChild(fila(campo('Imán a la rejilla', 'select', doc.paso, (v) => { doc.paso = parseFloat(v); },
+    [['5', '5 mm'], ['1', '1 mm'], ['0.5', '0,5 mm'], ['0', 'Sin imán']])));
+  destino.appendChild(nota('Alt al arrastrar: ajuste fino de 0,5 mm. Flechas: 1 mm (Mayús: 5 mm).'));
+}
+
+function panelElemento() {
+  panel.innerHTML = '';
+  for (const k of Object.keys(refs)) delete refs[k];
+  panelPlantilla(panel);
+
+  if (sel === 'cuerpo') {
+    panel.appendChild(seccion('Cuerpo (tabla de líneas)'));
+    panel.appendChild(fila(campo('Datos (lista del JSON)', 'text', doc.datos, (v) => { doc.datos = v; })));
+    const suma = doc.columnas.reduce((a, c) => a + (+c.ancho || 0), 0);
+    panel.appendChild(nota(r2(suma) === 100 ? 'Anchos: suman 100 %.' : `Anchos: suman ${r2(suma)} %, deberían sumar 100.`, r2(suma) === 100 ? 'ayuda' : 'aviso'));
+    doc.columnas.forEach((c, i) => {
+      const caja = document.createElement('div');
+      caja.className = 'col';
+      caja.appendChild(fila(
+        campo('Campo', 'text', c.campo, (v) => { c.campo = v; }),
+        campo('Título', 'text', c.titulo, (v) => { c.titulo = v; }),
+      ));
+      caja.appendChild(fila(
+        campo('Ancho %', 'number', c.ancho, (v) => { c.ancho = v; }),
+        campo('Alinear', 'select', c.alinear, (v) => { c.alinear = v; }, [['izquierda', 'Izquierda'], ['centro', 'Centro'], ['derecha', 'Derecha']]),
+      ));
+      caja.appendChild(fila(campo('Formato', 'select', c.formato || '', (v) => { c.formato = v; },
+        [['', 'Ninguno'], ['moneda', 'Moneda'], ['numero', 'Número'], ['fecha', 'Fecha']])));
+      const q = document.createElement('button');
+      q.textContent = 'Quitar columna'; q.className = 'peligro';
+      q.addEventListener('click', () => { doc.columnas.splice(i, 1); panelElemento(); render(); commit(); });
+      caja.appendChild(q);
+      panel.appendChild(caja);
+    });
+    const a = document.createElement('button');
+    a.textContent = '+ Añadir columna';
+    a.addEventListener('click', () => {
+      doc.columnas.push({ campo: 'campo', titulo: 'Título', ancho: 10, alinear: 'izquierda', formato: '' });
+      panelElemento(); render(); commit();
+    });
+    panel.appendChild(a);
+  } else if (sel) {
+    const e = porId(sel);
+    if (e) {
+      panel.appendChild(seccion('Elemento: ' + e.tipo));
+      const gx = campo('x (mm)', 'number', e.x, (v) => { e.x = Math.max(0, v); });
+      const gy = campo('y (mm)', 'number', e.y, (v) => { e.y = Math.max(0, v); });
+      const gw = campo(e.tipo === 'linea' ? 'Largo (mm)' : 'Ancho (mm)', 'number', e.w, (v) => { e.w = Math.max(0.5, v); });
+      refs.x = gx._inp; refs.y = gy._inp; refs.w = gw._inp;
+      panel.appendChild(fila(gx, gy));
+      if (e.tipo === 'linea') {
+        panel.appendChild(fila(gw));
+      } else {
+        const gh = campo('Alto (mm)', 'number', e.h, (v) => { e.h = Math.max(0.5, v); });
+        refs.h = gh._inp;
+        panel.appendChild(fila(gw, gh));
+      }
+      if (e.tipo === 'texto') {
+        panel.appendChild(fila(campo('Texto (usa {{campo}})', 'textarea', e.texto, (v) => { e.texto = v; })));
+        panel.appendChild(fila(
+          campo('Tamaño (pt)', 'number', e.tam, (v) => { e.tam = Math.max(1, v); }),
+          campo('Alinear', 'select', e.alinear, (v) => { e.alinear = v; }, [['izquierda', 'Izquierda'], ['centro', 'Centro'], ['derecha', 'Derecha']]),
+        ));
+        const l = document.createElement('label');
+        l.className = 'check';
+        const c = document.createElement('input');
+        c.type = 'checkbox'; c.checked = !!e.negrita;
+        c.addEventListener('change', () => { e.negrita = c.checked; render(); commit(); });
+        l.append(c, 'Negrita');
+        panel.appendChild(l);
+      } else if (e.tipo === 'logo') {
+        panel.appendChild(fila(campo('Archivo (src)', 'text', e.src || '', (v) => { e.src = v; })));
+        const b = document.createElement('button');
+        b.textContent = 'Vista previa de imagen…';
+        b.addEventListener('click', () => $('#f-imagen').click());
+        panel.appendChild(b);
+        panel.appendChild(nota('La imagen solo se usa para la vista previa; el XML guarda el nombre del archivo.'));
+      } else if (e.tipo === 'linea') {
+        panel.appendChild(fila(campo('Grosor (mm)', 'number', e.grosor, (v) => { e.grosor = Math.max(0.1, v); })));
+      } else if (e.tipo === 'rectangulo') {
+        panel.appendChild(fila(
+          campo('Grosor (mm)', 'number', e.grosor, (v) => { e.grosor = Math.max(0.1, v); }),
+          campo('Relleno (#rrggbb)', 'text', e.relleno || '', (v) => { e.relleno = v; }),
+        ));
+      }
+      panel.appendChild(nota('Banda en el XML: ' + banda(e) + ' (según su posición vertical).'));
+    }
+  } else {
+    panel.appendChild(seccion('Elemento'));
+    panel.appendChild(nota('Haz clic en un elemento o en el cuerpo para editarlo, o añade uno desde la barra.'));
+  }
+
+  panel.appendChild(seccion('XML de la plantilla'));
+  const ta = document.createElement('textarea');
+  ta.id = 'xml'; ta.spellcheck = false; ta.value = toXML();
+  panel.appendChild(ta);
+  const ap = document.createElement('button');
+  ap.textContent = 'Aplicar XML editado';
+  ap.addEventListener('click', () => aplicarXML(ta.value));
+  panel.appendChild(ap);
+}
+
+function refrescarXML() {
+  const ta = $('#xml');
+  if (ta && document.activeElement !== ta) ta.value = toXML();
+}
+
+$('#f-imagen').addEventListener('change', (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  const e = sel && sel !== 'cuerpo' ? porId(sel) : null;
+  if (!f || !e || e.tipo !== 'logo') return;
+  const lector = new FileReader();
+  lector.onload = () => {
+    if (!e.src) e.src = f.name;
+    vistas[e.src] = String(lector.result);
+    render(); panelElemento(); commit();
+  };
+  lector.readAsDataURL(f);
+});
+
+/* ------------------------------------------------------------------ */
+/*  Arranque                                                           */
+/* ------------------------------------------------------------------ */
+function todo() { render(); panelElemento(); }
+
+(function iniciar() {
+  try {
+    const guardado = localStorage.getItem(CLAVE_LS);
+    if (guardado) doc = fromXML(guardado);
+  } catch (e) { /* borrador inválido o sin almacenamiento: se usa el ejemplo */ }
+  todo();
+  commit();
+})();
+
+// Pequeña API para pruebas desde la consola o desde scripts.
+window.EditorPlantillas = {
+  toXML, fromXML,
+  getDoc: () => doc,
+  setDoc: (d) => { doc = d; sel = null; todo(); commit(); },
+  ejemplo: plantillaEjemplo,
+};
+</script>
+</body>
+</html>

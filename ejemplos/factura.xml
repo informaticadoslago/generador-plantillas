@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plantilla nombre="factura" version="1">
+  <pagina formato="A4" orientacion="vertical" unidad="mm">
+    <margen superior="25" inferior="20" izquierda="15" derecha="15"/>
+  </pagina>
+  <cabecera altura="70">
+    <logo src="logo.png" x="15" y="10" ancho="40" alto="20"/>
+    <texto x="65" y="10" ancho="70" alto="20" tam="10" negrita="false" alinear="izquierda">{{emisor.nombre}}
+{{emisor.nif}}
+{{emisor.direccion}}</texto>
+    <texto x="140" y="10" ancho="55" alto="14" tam="11" negrita="true" alinear="derecha">Factura nº {{numero}}
+Fecha: {{fecha}}</texto>
+    <texto x="110" y="35" ancho="85" alto="25" tam="10" negrita="false" alinear="izquierda">{{cliente.nombre}}
+{{cliente.nif}}
+{{cliente.direccion}}</texto>
+    <linea x="15" y="66" largo="180" grosor="0.3"/>
+  </cabecera>
+  <cuerpo datos="lineas">
+    <columna campo="concepto" titulo="Concepto" ancho="46" alinear="izquierda" formato=""/>
+    <columna campo="cantidad" titulo="Cant." ancho="10" alinear="derecha" formato=""/>
+    <columna campo="precio" titulo="Precio" ancho="14" alinear="derecha" formato="moneda"/>
+    <columna campo="iva" titulo="IVA %" ancho="12" alinear="derecha" formato=""/>
+    <columna campo="importe" titulo="Importe" ancho="18" alinear="derecha" formato="moneda"/>
+  </cuerpo>
+  <pie altura="55">
+    <texto x="120" y="245" ancho="75" alto="20" tam="11" negrita="true" alinear="derecha">Base imponible: {{totales.base}}
+IVA: {{totales.iva}}
+TOTAL: {{totales.total}}</texto>
+    <texto x="15" y="268" ancho="180" alto="9" tam="8" negrita="false" alinear="izquierda">Forma de pago: {{formaPago}}. {{textoLegal}}</texto>
+  </pie>
+</plantilla>
