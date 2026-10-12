@@ -5,12 +5,34 @@ Idioma del proyecto: **español** (nombres de elementos XML, atributos, comentar
 
 ## Arquitectura prevista
 
-1. **Editor visual** (JavaScript puro, un solo HTML en `editor/index.html`): lienzo con la página a tamaño real, fondo blanco con puntos cada 5 mm. Lee y escribe el XML de la plantilla.
-2. **Almacenamiento**: el XML es la fuente de verdad. En Laravel irá en una columna `longText` de la tabla `plantillas` (`nombre` único, `xml`, `version`). Validación con un XSD antes de guardar.
-3. **Backend Laravel**: rutas `GET/PUT /plantillas/{nombre}`, ejecución de la consulta de datos, agrupación y totales, y plantilla Blade que traduce el XML a HTML/CSS.
-4. **Renderizado**: HTML + CSS Paged Media → PDF con **Gotenberg** (contenedor Docker con Chromium). Alternativa sin Docker: Dompdf (peor CSS). Excel/CSV salen directamente de los datos con PhpSpreadsheet, sin pasar por HTML.
+1. **Editor visual** (JavaScript puro, un solo HTML en `public/index.html`): lienzo con la página a tamaño real, fondo blanco con puntos cada 5 mm. Lee y escribe el XML de la plantilla.
+2. **Almacenamiento**: el XML es la fuente de verdad y se guarda **en el servidor, en SQLite** (`datos/plantillas.sqlite`, fuera de Git). Tabla `plantillas`: `nombre` único (sin distinguir mayúsculas), `xml`, `version`, `creada`, `actualizada`. El mismo esquema se llevará a la migración de Laravel. Validación con un XSD antes de guardar (pendiente).
+3. **API actual (PHP + SQLite, sin dependencias)** en `api/index.php`; en el entorno de la sesión no se podía instalar Laravel (Packagist bloqueado), así que se hizo así para poder probarla. Cuando se pase a Laravel, el contrato se mantiene:
+   - `GET /api/plantillas` lista (nombre, versión, fecha)
+   - `GET /api/plantillas/{nombre}` plantilla con su XML
+   - `GET /api/plantillas/{nombre}/xml` descarga el XML
+   - `PUT /api/plantillas/{nombre}` guarda `{xml, version}`; `version` es la que tenía el cliente (0 si es nueva). Si no coincide con la del servidor responde 409 (control de versiones, para no pisar cambios entre equipos). El nombre de la URL debe coincidir con `<plantilla nombre="...">`.
+   - `POST /api/plantillas/{nombre}/duplicar` copia con otro nombre `{nombre}`
+   - `DELETE /api/plantillas/{nombre}`
+4. **Backend Laravel** (pendiente): mismas rutas, ejecución de la consulta de datos, agrupación y totales, y plantilla Blade que traduce el XML a HTML/CSS.
+5. **Renderizado** (pendiente): HTML + CSS Paged Media → PDF con **Gotenberg** (contenedor Docker con Chromium). Alternativa sin Docker: Dompdf (peor CSS). Excel/CSV salen directamente de los datos con PhpSpreadsheet, sin pasar por HTML.
 
-El editor se puede usar sin backend: abrir `editor/index.html` en el navegador. Guarda un borrador en `localStorage`.
+## Cómo ejecutarlo
+
+```bash
+php -S localhost:8000 -t public router.php
+```
+
+Abrir http://localhost:8000. La base de datos y la carpeta `datos/` se crean solas. `router.php` solo sirve para el servidor integrado de PHP (desarrollo).
+
+Si se abre `public/index.html` directamente en el navegador (sin servidor), el editor funciona en **modo local**: sin Guardar ni Plantillas, con Exportar/Importar XML y un borrador en `localStorage`.
+
+## Editor: guardado y lista
+
+- **Guardar** (Ctrl+S) envía el XML al servidor. El indicador de la barra inferior muestra `nombre · vN · guardada`, `cambios sin guardar` o `sin guardar`.
+- **Plantillas** abre la lista guardada en el servidor: abrir, descargar XML, duplicar y borrar, con filtro por nombre.
+- Cambiar el nombre de la plantilla y guardar crea una plantilla nueva (guardar como). Si el nombre ya existe en el servidor, se rechaza.
+- **Exportar XML** descarga lo que hay en pantalla; el botón XML de la lista descarga lo guardado en el servidor.
 
 ## Decisiones tomadas
 
@@ -56,11 +78,14 @@ El editor se puede usar sin backend: abrir `editor/index.html` en el navegador. 
 - ¿Los totales van solo al final de la última página o hay pie repetido con «suma y sigue»?
 - ¿La cabecera completa se repite en cada página o solo en la primera?
 - Subinformes, agrupaciones con subtotales y totales calculados (`suma(importe)`): sintaxis por definir.
-- XSD de la plantilla y estructura Laravel (migración, controlador, servicio de renderizado).
+- XSD de la plantilla y estructura Laravel (migración, controlador, servicio de renderizado). Al pasar a Laravel, SQLite encaja con su configuración por defecto.
+- Autenticación de la API: ahora no hay (herramienta local). Hace falta antes de exponerla en el servidor.
+- Despliegue en Plesk (Apache): `router.php` es solo para desarrollo; habrá que enrutar `/api/` a `api/index.php` y proteger `datos/`.
 - Despliegue de Gotenberg: el servidor de producción es un Plesk y puede limitar Docker; plan B Dompdf.
 
 ## Convenciones
 
 - Rama de trabajo: `desarrollo`. No tocar `main` directamente.
-- Todo en un único HTML mientras el editor sea un prototipo; sin dependencias externas ni CDN.
+- Todo el editor en un único HTML (`public/index.html`) mientras sea un prototipo; sin dependencias externas ni CDN.
+- La API PHP no usa Composer: solo PDO SQLite y DOM, ambos incluidos en PHP 8.
 - Mensajes de commit en español.

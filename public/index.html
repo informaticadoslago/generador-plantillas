@@ -63,6 +63,37 @@
   .col { border: 1px solid var(--linea); border-radius: 6px; padding: 6px; margin-bottom: 6px; }
   .col .fila { margin-bottom: 4px; }
   #xml { width: 100%; height: 220px; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--linea); }
+  #p-estado { font-weight: 600; color: var(--texto); }
+  #p-estado.sucio { color: var(--aviso); }
+
+  /* Lista de plantillas */
+  dialog#lista {
+    border: 1px solid var(--linea); border-radius: 10px; padding: 14px 16px;
+    width: min(760px, 94vw); max-height: 82vh; color: var(--texto);
+  }
+  dialog#lista::backdrop { background: rgba(0,0,0,.35); }
+  .lista-cab { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .lista-cab h3 { margin: 0; font-size: 16px; }
+  .lista-barra { display: flex; gap: 6px; margin-bottom: 8px; }
+  .lista-barra input {
+    flex: 1; padding: 4px 8px; border: 1px solid var(--linea); border-radius: 6px; background: #fff;
+  }
+  #l-msg { min-height: 18px; margin: 4px 0; }
+  #l-msg.error { color: var(--error); }
+  .tabla-lista { width: 100%; border-collapse: collapse; }
+  .tabla-lista th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--suave); border-bottom: 1px solid var(--linea); padding: 4px 6px;
+  }
+  .tabla-lista td { border-bottom: 1px solid #eef0f3; padding: 6px; vertical-align: middle; }
+  .tabla-lista td.acciones { text-align: right; white-space: nowrap; }
+  .tabla-lista td.acciones > * { margin-left: 4px; }
+  a.boton {
+    display: inline-block; background: #fff; border: 1px solid var(--linea); border-radius: 6px;
+    padding: 4px 10px; color: inherit; text-decoration: none;
+  }
+  a.boton:hover { border-color: var(--acento); }
 
   /* Elementos del lienzo */
   .el { position: absolute; z-index: 2; cursor: move; outline: 1px dashed rgba(0,0,0,.22); overflow: visible; }
@@ -100,6 +131,9 @@
 <body>
 
 <div id="barra">
+  <button id="b-plantillas" title="Plantillas guardadas en el servidor">Plantillas</button>
+  <button id="b-guardar" class="principal" title="Guardar en el servidor (Ctrl+S)">Guardar</button>
+  <span class="sep"></span>
   <button data-add="logo" title="Añadir logo o imagen">+ Logo</button>
   <button data-add="texto" title="Añadir texto">+ Texto</button>
   <button data-add="linea" title="Añadir línea horizontal">+ Línea</button>
@@ -122,16 +156,30 @@
   <button id="b-nueva">Nueva</button>
   <button id="b-ejemplo">Ejemplo factura</button>
   <button id="b-importar">Importar XML</button>
-  <button id="b-exportar" class="principal">Exportar XML</button>
+  <button id="b-exportar" title="Descargar el XML de lo que hay en pantalla">Exportar XML</button>
   <input type="file" id="f-importar" accept=".xml,text/xml,application/xml" hidden>
   <input type="file" id="f-imagen" accept="image/*" hidden>
 </div>
 
 <div id="lienzo"><div id="pagina"></div></div>
 
-<div id="estado"><span id="coords">&nbsp;</span><span id="mensaje"></span></div>
+<div id="estado"><span id="p-estado"></span><span id="coords">&nbsp;</span><span id="mensaje"></span></div>
 
 <div id="panel"></div>
+
+<dialog id="lista">
+  <div class="lista-cab">
+    <h3>Plantillas guardadas</h3>
+    <button id="l-cerrar">Cerrar</button>
+  </div>
+  <div class="lista-barra">
+    <input id="l-filtro" type="search" placeholder="Filtrar por nombre…" autocomplete="off">
+    <button id="l-nueva">Nueva</button>
+    <button id="l-ejemplo">Ejemplo factura</button>
+  </div>
+  <p id="l-msg" class="ayuda"></p>
+  <div id="l-tabla"></div>
+</dialog>
 
 <script>
 'use strict';
@@ -142,8 +190,11 @@
 const MM = 96 / 25.4;               // píxeles de pantalla por mm (zoom 1)
 const PT = 25.4 / 72;               // mm por punto tipográfico
 const FORMATOS = { A3: [297, 420], A4: [210, 297], A5: [148, 210] };
-const CLAVE_LS = 'editor-plantillas:borrador';
+const CLAVE_LS = 'editor-plantillas:sesion';
 
+let servidor = false;               // true si la API responde (php -S ... router.php)
+let origen = null;                  // {nombre, version} de la plantilla del servidor que se edita
+let guardadoXml = '';               // XML tal como se abrió o guardó por última vez
 let uid = 1;
 let doc = plantillaEjemplo();
 let sel = null;                     // id de elemento, 'cuerpo' o null
@@ -352,18 +403,54 @@ function commit() {
   if (hist.length > 100) hist.shift();
   hi = hist.length - 1;
   refrescarXML();
-  try { localStorage.setItem(CLAVE_LS, toXML()); } catch (e) { /* sin almacenamiento */ }
+  guardarSesion();
+  actualizarEstado();
 }
 function commitDiferido() {
   clearTimeout(temporizador);
   temporizador = setTimeout(commit, 350);
 }
+function reiniciarHistorial() {
+  clearTimeout(temporizador);
+  hist = []; hi = -1;
+}
+function guardarSesion() {
+  try {
+    localStorage.setItem(CLAVE_LS, JSON.stringify({ xml: toXML(), origen, guardado: guardadoXml }));
+  } catch (e) { /* sin almacenamiento */ }
+}
+function sucio() { return toXML() !== guardadoXml; }
+function esOrigen(nombre) {
+  return !!origen && origen.nombre.toLowerCase() === String(nombre).trim().toLowerCase();
+}
+function actualizarEstado() {
+  const e = $('#p-estado');
+  let t;
+  let marca = false;
+  if (!servidor) {
+    t = `${doc.nombre} · modo local (sin servidor)`;
+  } else if (!esOrigen(doc.nombre)) {
+    t = `${doc.nombre} · sin guardar`; marca = true;
+  } else if (sucio()) {
+    t = `${doc.nombre} · v${origen.version} · cambios sin guardar`; marca = true;
+  } else {
+    t = `${doc.nombre} · v${origen.version} · guardada`;
+  }
+  e.textContent = t;
+  e.className = marca ? 'sucio' : '';
+  document.title = (marca ? '● ' : '') + doc.nombre + ' — Editor de plantillas';
+  $('#b-guardar').disabled = !servidor;
+  $('#b-plantillas').disabled = !servidor;
+  const ayuda = servidor ? '' : ' (requiere el servidor: php -S localhost:8000 -t public router.php)';
+  $('#b-guardar').title = 'Guardar en el servidor (Ctrl+S)' + ayuda;
+  $('#b-plantillas').title = 'Plantillas guardadas en el servidor' + ayuda;
+}
 function deshacer() {
   clearTimeout(temporizador); commit();
-  if (hi > 0) { hi--; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); }
+  if (hi > 0) { hi--; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); guardarSesion(); actualizarEstado(); }
 }
 function rehacer() {
-  if (hi < hist.length - 1) { hi++; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); }
+  if (hi < hist.length - 1) { hi++; doc = JSON.parse(hist[hi]); sel = null; todo(); refrescarXML(); guardarSesion(); actualizarEstado(); }
 }
 
 /* ------------------------------------------------------------------ */
@@ -550,9 +637,11 @@ pagina.addEventListener('pointermove', (ev) => {
 });
 
 window.addEventListener('keydown', (ev) => {
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!$('#lista').open) guardar(); return; }
+  if ($('#lista').open) return;
   const t = ev.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
-  const ctrl = ev.ctrlKey || ev.metaKey;
   if (ctrl && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? rehacer() : deshacer(); return; }
   if (ctrl && ev.key.toLowerCase() === 'y') { ev.preventDefault(); rehacer(); return; }
   if (ctrl && ev.key.toLowerCase() === 'd') { ev.preventDefault(); duplicar(); return; }
@@ -607,14 +696,29 @@ $('#b-eliminar').addEventListener('click', eliminar);
 $('#b-deshacer').addEventListener('click', deshacer);
 $('#b-rehacer').addEventListener('click', rehacer);
 $('#zoom').addEventListener('change', (ev) => { zoom = parseFloat(ev.target.value); render(); });
-$('#b-nueva').addEventListener('click', () => {
-  if (!confirm('¿Descartar la plantilla actual y empezar una vacía?')) return;
-  doc = plantillaVacia(); sel = null; todo(); commit();
-});
-$('#b-ejemplo').addEventListener('click', () => {
-  if (!confirm('¿Descartar la plantilla actual y cargar el ejemplo de factura?')) return;
-  doc = plantillaEjemplo(); sel = null; todo(); commit();
-});
+// Empieza a editar otra plantilla. `o` = {nombre, version} si viene del servidor.
+function empezar(d, o) {
+  doc = d; sel = null; origen = o || null;
+  guardadoXml = o ? toXML() : '';
+  reiniciarHistorial();
+  todo();
+  commit();
+}
+function descartar(msg) { return !sucio() || confirm(msg); }
+function nueva() {
+  if (!descartar('Hay cambios sin guardar. ¿Descartarlos y empezar una plantilla vacía?')) return false;
+  empezar(plantillaVacia());
+  return true;
+}
+function ejemplo() {
+  if (!descartar('Hay cambios sin guardar. ¿Descartarlos y cargar el ejemplo de factura?')) return false;
+  empezar(plantillaEjemplo());
+  return true;
+}
+$('#b-nueva').addEventListener('click', nueva);
+$('#b-ejemplo').addEventListener('click', ejemplo);
+$('#b-guardar').addEventListener('click', guardar);
+$('#b-plantillas').addEventListener('click', abrirLista);
 $('#b-exportar').addEventListener('click', () => {
   const blob = new Blob([toXML()], { type: 'application/xml' });
   const a = document.createElement('a');
@@ -842,13 +946,188 @@ $('#f-imagen').addEventListener('change', (ev) => {
 /* ------------------------------------------------------------------ */
 function todo() { render(); panelElemento(); }
 
+/* ------------------------------------------------------------------ */
+/*  Servidor: guardar en SQLite y lista de plantillas                  */
+/* ------------------------------------------------------------------ */
+async function api(metodo, ruta, cuerpo) {
+  const opc = { method: metodo, headers: {} };
+  if (cuerpo !== undefined) {
+    opc.headers['Content-Type'] = 'application/json';
+    opc.body = JSON.stringify(cuerpo);
+  }
+  const r = await fetch('api/' + ruta, opc);
+  let datos = null;
+  try { datos = await r.json(); } catch (e) { /* sin cuerpo JSON */ }
+  if (!r.ok) {
+    const err = new Error((datos && datos.error) || ('Error ' + r.status));
+    err.estado = r.status;
+    throw err;
+  }
+  return datos;
+}
+const urlPlantilla = (nombre) => 'plantillas/' + encodeURIComponent(nombre);
+
+async function detectarServidor() {
+  try {
+    const r = await api('GET', 'plantillas');
+    servidor = !!(r && Array.isArray(r.plantillas));
+  } catch (e) {
+    servidor = false;
+  }
+  actualizarEstado();
+}
+
+async function guardar() {
+  if (!servidor) { mensaje('No hay servidor: usa «Exportar XML».', true); return; }
+  const nombre = doc.nombre.trim();
+  if (!nombre) { mensaje('La plantilla necesita un nombre.', true); return; }
+  if (doc.nombre !== nombre) { doc.nombre = nombre; panelElemento(); }
+  clearTimeout(temporizador);
+  commit();
+  const xml = toXML();
+  const version = esOrigen(nombre) ? origen.version : 0;
+  try {
+    const r = await api('PUT', urlPlantilla(nombre), { xml, version });
+    origen = { nombre: r.nombre, version: r.version };
+    guardadoXml = xml;
+    guardarSesion();
+    actualizarEstado();
+    mensaje(`Guardada «${r.nombre}» (versión ${r.version}).`);
+  } catch (err) {
+    mensaje(err.message, true);
+  }
+}
+
+let listaDatos = [];
+
+function msgLista(txt, error) {
+  const m = $('#l-msg');
+  m.textContent = txt || '';
+  m.className = error ? 'error' : 'ayuda';
+}
+function abrirLista() {
+  if (!servidor) return;
+  $('#l-filtro').value = '';
+  msgLista('');
+  if (!$('#lista').open) $('#lista').showModal();
+  cargarLista();
+}
+async function cargarLista() {
+  $('#l-tabla').textContent = 'Cargando…';
+  try {
+    const r = await api('GET', 'plantillas');
+    listaDatos = r.plantillas;
+    pintarLista();
+  } catch (err) {
+    $('#l-tabla').textContent = '';
+    msgLista(err.message, true);
+  }
+}
+function boton(texto, alClic, clase) {
+  const b = document.createElement('button');
+  b.textContent = texto;
+  if (clase) b.className = clase;
+  b.addEventListener('click', alClic);
+  return b;
+}
+function pintarLista() {
+  const filtro = $('#l-filtro').value.trim().toLowerCase();
+  const cont = $('#l-tabla');
+  cont.innerHTML = '';
+  const filas = listaDatos.filter((p) => p.nombre.toLowerCase().includes(filtro));
+  if (!filas.length) {
+    cont.appendChild(nota(listaDatos.length
+      ? 'Ninguna plantilla coincide con el filtro.'
+      : 'Aún no hay plantillas guardadas. Crea una y pulsa Guardar.'));
+    return;
+  }
+  const tabla = document.createElement('table');
+  tabla.className = 'tabla-lista';
+  tabla.innerHTML = '<thead><tr><th>Nombre</th><th>Versión</th><th>Modificada</th><th></th></tr></thead>';
+  const cuerpo = document.createElement('tbody');
+  filas.forEach((p) => {
+    const tr = document.createElement('tr');
+    const actual = esOrigen(p.nombre);
+    const tdNombre = document.createElement('td');
+    tdNombre.textContent = p.nombre + (actual ? '  (abierta)' : '');
+    if (actual) tdNombre.style.fontWeight = '600';
+    const tdVersion = document.createElement('td');
+    tdVersion.textContent = 'v' + p.version;
+    const tdFecha = document.createElement('td');
+    tdFecha.textContent = new Date(p.actualizada).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' });
+    const tdAcc = document.createElement('td');
+    tdAcc.className = 'acciones';
+    const xml = document.createElement('a');
+    xml.className = 'boton';
+    xml.textContent = 'XML';
+    xml.title = 'Descargar el XML guardado en el servidor';
+    xml.href = 'api/' + urlPlantilla(p.nombre) + '/xml';
+    xml.setAttribute('download', '');
+    tdAcc.append(
+      boton('Abrir', () => abrirPlantilla(p.nombre), 'principal'),
+      xml,
+      boton('Duplicar', () => duplicarPlantilla(p.nombre)),
+      boton('Borrar', () => borrarPlantilla(p.nombre), 'peligro'),
+    );
+    tr.append(tdNombre, tdVersion, tdFecha, tdAcc);
+    cuerpo.appendChild(tr);
+  });
+  tabla.appendChild(cuerpo);
+  cont.appendChild(tabla);
+}
+async function abrirPlantilla(nombre) {
+  if (!descartar(`Hay cambios sin guardar. ¿Descartarlos y abrir «${nombre}»?`)) return;
+  try {
+    const r = await api('GET', urlPlantilla(nombre));
+    empezar(fromXML(r.xml), { nombre: r.nombre, version: r.version });
+    $('#lista').close();
+    mensaje(`Abierta «${r.nombre}» (versión ${r.version}).`);
+  } catch (err) {
+    msgLista(err.message, true);
+  }
+}
+async function duplicarPlantilla(nombre) {
+  const nuevo = prompt('Nombre de la copia:', nombre + ' copia');
+  if (nuevo === null) return;
+  try {
+    const r = await api('POST', urlPlantilla(nombre) + '/duplicar', { nombre: nuevo.trim() });
+    msgLista(`Creada «${r.nombre}».`);
+    await cargarLista();
+  } catch (err) {
+    msgLista(err.message, true);
+  }
+}
+async function borrarPlantilla(nombre) {
+  if (!confirm(`¿Borrar «${nombre}» del servidor? No se puede deshacer.`)) return;
+  try {
+    await api('DELETE', urlPlantilla(nombre));
+    if (esOrigen(nombre)) {
+      origen = null; guardadoXml = '';
+      guardarSesion(); actualizarEstado();
+    }
+    msgLista(`Borrada «${nombre}».`);
+    await cargarLista();
+  } catch (err) {
+    msgLista(err.message, true);
+  }
+}
+$('#l-cerrar').addEventListener('click', () => $('#lista').close());
+$('#l-filtro').addEventListener('input', pintarLista);
+$('#l-nueva').addEventListener('click', () => { if (nueva()) $('#lista').close(); });
+$('#l-ejemplo').addEventListener('click', () => { if (ejemplo()) $('#lista').close(); });
+
 (function iniciar() {
   try {
-    const guardado = localStorage.getItem(CLAVE_LS);
-    if (guardado) doc = fromXML(guardado);
-  } catch (e) { /* borrador inválido o sin almacenamiento: se usa el ejemplo */ }
+    const s = JSON.parse(localStorage.getItem(CLAVE_LS) || 'null');
+    if (s && typeof s.xml === 'string') {
+      doc = fromXML(s.xml);
+      origen = s.origen && s.origen.nombre ? s.origen : null;
+      guardadoXml = typeof s.guardado === 'string' ? s.guardado : '';
+    }
+  } catch (e) { /* sesión inválida o sin almacenamiento: se usa el ejemplo */ }
   todo();
   commit();
+  detectarServidor();
 })();
 
 // Pequeña API para pruebas desde la consola o desde scripts.
