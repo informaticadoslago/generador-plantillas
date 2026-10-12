@@ -29,9 +29,10 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 
 ## Editor: guardado y lista
 
-- **Guardar** (Ctrl+S) envía el XML al servidor. El indicador de la barra inferior muestra `nombre · vN · guardada`, `cambios sin guardar` o `sin guardar`.
+- **Guardar** (Ctrl+S) sobrescribe en el servidor la plantilla con el nombre actual, o la crea si no existe. El indicador de la barra inferior muestra `nombre · vN · guardada`, `cambios sin guardar` o `sin guardar`. Si el servidor tiene otra versión (alguien la cambió) o ya existe otra plantilla con ese nombre, la API responde 409 y el editor pregunta si se quiere sobrescribir; si se rechaza, no se guarda nada.
+- **Guardar como…** (Ctrl+Mayús+S) guarda lo que hay en pantalla con otro nombre y sigue editando esa copia (la original no cambia). El botón «Duplicar» de la lista, en cambio, copia en el servidor lo ya guardado.
 - **Plantillas** abre la lista guardada en el servidor: abrir, descargar XML, duplicar y borrar, con filtro por nombre.
-- Cambiar el nombre de la plantilla y guardar crea una plantilla nueva (guardar como). Si el nombre ya existe en el servidor, se rechaza.
+- Cambiar el nombre en el panel y pulsar Guardar también crea una plantilla nueva con ese nombre (la anterior no se borra).
 - **Exportar XML** descarga lo que hay en pantalla; el botón XML de la lista descarga lo guardado en el servidor.
 - **Logo**: «Cargar imagen…» en el panel del elemento guarda la imagen en base64 dentro del XML (y se guarda con la plantilla en el servidor).
 - **Columnas del cuerpo**: se reordenan arrastrando el asa de dos líneas de cada columna en el panel (clic en el cuerpo para verlas).

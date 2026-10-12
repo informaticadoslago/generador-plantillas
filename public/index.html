@@ -156,6 +156,7 @@
 <div id="barra">
   <button id="b-plantillas" title="Plantillas guardadas en el servidor">Plantillas</button>
   <button id="b-guardar" class="principal" title="Guardar en el servidor (Ctrl+S)">Guardar</button>
+  <button id="b-guardar-como" title="Guardar con otro nombre (Ctrl+Mayús+S)">Guardar como…</button>
   <span class="sep"></span>
   <button data-add="logo" title="Añadir logo o imagen">+ Logo</button>
   <button data-add="texto" title="Añadir texto">+ Texto</button>
@@ -582,6 +583,7 @@ function actualizarEstado() {
   e.className = marca ? 'sucio' : '';
   document.title = (marca ? '● ' : '') + doc.nombre + ' — Editor de plantillas';
   $('#b-guardar').disabled = !servidor;
+  $('#b-guardar-como').disabled = !servidor;
   $('#b-plantillas').disabled = !servidor;
   const ayuda = servidor ? '' : ' (requiere el servidor: php -S localhost:8000 -t public router.php)';
   $('#b-guardar').title = 'Guardar en el servidor (Ctrl+S)' + ayuda;
@@ -861,7 +863,7 @@ pagina.addEventListener('pointermove', (ev) => {
 
 window.addEventListener('keydown', (ev) => {
   const ctrl = ev.ctrlKey || ev.metaKey;
-  if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!$('#lista').open) guardar(); return; }
+  if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!$('#lista').open) (ev.shiftKey ? guardarComo() : guardar()); return; }
   if ($('#lista').open) return;
   const t = ev.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
@@ -972,6 +974,7 @@ function ejemplo() {
 $('#b-nueva').addEventListener('click', nueva);
 $('#b-ejemplo').addEventListener('click', ejemplo);
 $('#b-guardar').addEventListener('click', guardar);
+$('#b-guardar-como').addEventListener('click', guardarComo);
 $('#b-plantillas').addEventListener('click', abrirLista);
 $('#b-exportar').addEventListener('click', () => {
   const blob = new Blob([toXML()], { type: 'application/xml' });
@@ -1380,6 +1383,7 @@ async function api(metodo, ruta, cuerpo) {
   if (!r.ok) {
     const err = new Error((datos && datos.error) || ('Error ' + r.status));
     err.estado = r.status;
+    err.datos = datos;
     throw err;
   }
   return datos;
@@ -1401,25 +1405,55 @@ async function detectarServidor() {
   actualizarEstado();
 }
 
+// Guarda con el nombre actual: sobrescribe la plantilla del servidor o la crea si no existe.
+// Devuelve true si se guardó. Si el servidor tiene otra versión (o ya existe una con ese nombre), pide confirmar.
 async function guardar() {
-  if (!servidor) { mensaje('No hay servidor: usa «Exportar XML».', true); return; }
+  if (!servidor) { mensaje('No hay servidor: usa «Exportar XML».', true); return false; }
   const nombre = doc.nombre.trim();
-  if (!nombre) { mensaje('La plantilla necesita un nombre.', true); return; }
+  if (!nombre) { mensaje('La plantilla necesita un nombre.', true); return false; }
   if (doc.nombre !== nombre) { doc.nombre = nombre; panelElemento(); }
   clearTimeout(temporizador);
   commit();
   const xml = toXML();
-  const version = esOrigen(nombre) ? origen.version : 0;
-  try {
-    const r = await api('PUT', urlPlantilla(nombre), { xml, version });
-    origen = { nombre: r.nombre, version: r.version };
-    guardadoXml = xml;
-    guardarSesion();
-    actualizarEstado();
-    mensaje(`Guardada «${r.nombre}» (versión ${r.version}).`);
-  } catch (err) {
-    mensaje(err.message, true);
+  let version = esOrigen(nombre) ? origen.version : 0;
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const r = await api('PUT', urlPlantilla(nombre), { xml, version });
+      origen = { nombre: r.nombre, version: r.version };
+      guardadoXml = xml;
+      guardarSesion();
+      actualizarEstado();
+      mensaje(`Guardada «${r.nombre}» (versión ${r.version}).`);
+      return true;
+    } catch (err) {
+      const actual = err.datos && err.datos.version_actual;
+      const aviso = err.estado === 409 && actual
+        ? (err.datos.codigo === 'existe'
+          ? `Ya existe una plantilla «${nombre}» en el servidor.`
+          : `«${nombre}» ha cambiado en el servidor (versión ${actual}) desde que la abriste.`)
+        : null;
+      if (intento === 0 && aviso && confirm(aviso + '\n\n¿Sobrescribirla con lo que tienes en pantalla?')) {
+        version = actual;      // el usuario acepta pisar la versión del servidor
+        continue;
+      }
+      mensaje(aviso ? aviso + ' No se ha guardado.' : err.message, true);
+      return false;
+    }
   }
+  return false;
+}
+
+// Guardar como: guarda lo que hay en pantalla con otro nombre y sigue editando esa copia.
+async function guardarComo() {
+  if (!servidor) { mensaje('No hay servidor: usa «Exportar XML».', true); return; }
+  const anterior = doc.nombre;
+  const n = prompt('Guardar como (nombre de la nueva plantilla):', esOrigen(anterior) ? anterior + ' copia' : anterior);
+  if (n === null) return;
+  const nombre = n.trim();
+  if (!nombre) { mensaje('La plantilla necesita un nombre.', true); return; }
+  doc.nombre = nombre;
+  panelElemento();
+  if (!(await guardar())) { doc.nombre = anterior; panelElemento(); actualizarEstado(); }
 }
 
 let listaDatos = [];

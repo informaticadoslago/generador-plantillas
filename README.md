@@ -22,7 +22,8 @@ Abre http://localhost:8000. La base de datos se crea sola en `datos/plantillas.s
 - **Rectángulo contenedor**: puede llevar textos, logos y líneas dentro; al girarlo gira todo. Cada elemento se puede desvincular (o vincular) desde su panel sin moverlo de sitio.
 - **Marca de agua** a página completa, detrás de todo: texto o imagen (base64) girados y con opacidad casi total.
 - Arrastrar, redimensionar con el asa, imán a la rejilla (Alt = ajuste fino), flechas, duplicar, eliminar, deshacer/rehacer.
-- **Guardar** (Ctrl+S) en el servidor y **Plantillas** con la lista guardada: abrir, descargar XML, duplicar y borrar.
+- **Guardar** (Ctrl+S) sobrescribe la plantilla del servidor o la crea si no existe (si cambió en el servidor, pregunta antes de pisarla). **Guardar como…** (Ctrl+Mayús+S) la guarda con otro nombre.
+- **Plantillas** con la lista guardada: abrir, descargar XML, duplicar y borrar.
 - **Exportar XML** / **Importar XML**, y un cuadro con el XML en vivo que se puede editar y aplicar.
 - Sin servidor (abriendo `public/index.html` directamente) funciona en modo local, con borrador en el navegador.
 
