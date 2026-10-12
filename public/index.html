@@ -138,6 +138,29 @@
   .tabla-libre { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; }
   .tabla-libre th, .tabla-libre td { padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #475569; font-weight: 400; }
   .tabla-libre th { color: #0f172a; font-weight: 600; }
+  /* Vista previa con datos de prueba */
+  dialog#previa { border: 1px solid var(--linea); border-radius: 10px; padding: 0; width: 96vw; height: 94vh; max-width: none; color: var(--texto); }
+  dialog#previa[open] { display: flex; flex-direction: column; }
+  dialog#previa::backdrop { background: rgba(0,0,0,.45); }
+  .previa-cab { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--linea); }
+  .previa-cab h3 { margin: 0; font-size: 16px; flex: 1; }
+  .previa-cuerpo { flex: 1; display: flex; min-height: 0; }
+  #previa-paginas { flex: 1; overflow: auto; background: #e5e7eb; padding: 16px; }
+  #previa-lateral { width: 340px; border-left: 1px solid var(--linea); padding: 10px 12px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+  #previa-json { flex: 1; min-height: 220px; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; padding: 6px; border: 1px solid var(--linea); border-radius: 6px; resize: none; white-space: pre; }
+  #previa-avisos { font-size: 12px; margin: 0; }
+  #previa-avisos.error { color: var(--error); }
+  .pv-pagina { position: relative; background: #fff; margin: 0 auto 6px; box-shadow: 0 1px 6px rgba(0,0,0,.25); overflow: hidden; }
+  .pv-num { text-align: center; font-size: 11px; color: var(--suave); margin-bottom: 14px; }
+  .pv-el { position: absolute; }
+  .pv-el .c { width: 100%; height: 100%; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+  .pv-el img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .pv-el .trazo { position: absolute; left: 0; right: 0; top: 50%; background: #000; }
+  .pv-el > .pv-tabla { position: static; }
+  .pv-tabla { position: absolute; border-collapse: collapse; table-layout: fixed; }
+  .pv-tabla th, .pv-tabla td { padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 400; }
+  .pv-tabla th { font-weight: 600; background: #e2e8f0; }
+  .falta { background: #fde68a; }
   .guia-margen { position: absolute; border: 1px dashed #e11d48; pointer-events: none; opacity: .55; }
   .guia-banda { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--acento); pointer-events: none; opacity: .7; }
   .guia-banda span {
@@ -185,6 +208,7 @@
   <button id="b-nueva">Nueva</button>
   <button id="b-ejemplo">Ejemplo factura</button>
   <button id="b-importar">Importar XML</button>
+  <button id="b-previa" title="Ver la plantilla con datos de prueba">Previsualizar</button>
   <button id="b-exportar" title="Descargar el XML de lo que hay en pantalla">Exportar XML</button>
   <input type="file" id="f-importar" accept=".xml,text/xml,application/xml" hidden>
   <input type="file" id="f-imagen" accept="image/*" hidden>
@@ -210,6 +234,28 @@
   </div>
   <p id="l-msg" class="ayuda"></p>
   <div id="l-tabla"></div>
+</dialog>
+
+<dialog id="previa">
+  <div class="previa-cab">
+    <h3>Vista previa con datos de prueba</h3>
+    <label>Zoom <select id="previa-zoom"><option value="0.6">60 %</option><option value="0.8" selected>80 %</option><option value="1">100 %</option></select></label>
+    <button id="previa-cerrar">Cerrar</button>
+  </div>
+  <div class="previa-cuerpo">
+    <div id="previa-paginas"></div>
+    <div id="previa-lateral">
+      <strong>Datos de prueba (JSON)</strong>
+      <textarea id="previa-json" spellcheck="false"></textarea>
+      <div class="fila">
+        <button id="previa-aplicar" class="principal">Aplicar</button>
+        <button id="previa-ejemplo">Restaurar ejemplo</button>
+      </div>
+      <button id="previa-muchas">Probar con 60 líneas (paginación)</button>
+      <p id="previa-avisos" class="ayuda"></p>
+      <p class="ayuda">Los datos se guardan dentro de la plantilla (<code>&lt;datos_prueba&gt;</code>). La cabecera y el pie se repiten en todas las páginas; es una decisión abierta.</p>
+    </div>
+  </div>
 </dialog>
 
 <script>
@@ -274,6 +320,7 @@ function plantillaVacia() {
     cabAlt: 70, pieAlt: 55, datos: 'lineas',
     columnas: columnasPorDefecto(), elementos: [],
     marca: null,
+    prueba: '',                     // JSON de datos de prueba para la vista previa
     paso: 5,
   };
 }
@@ -315,7 +362,7 @@ function plantillaEjemplo() {
     el('texto', 110, 35, 85, 25, { texto: '{{cliente.nombre}}\n{{cliente.documento}}\n{{cliente.direccion}}\n{{cliente.municipio}}', tam: 10, negrita: false, alinear: 'izquierda' }),
     el('linea', 15, 66, 180, 0, { grosor: 0.3 }),
     tablaNueva(15, 246, 100),
-    el('texto', 120, 245, 75, 20, { texto: 'Base: {{factura.base_imponible}}\nIVA: {{factura.cuota_iva}}\nTOTAL: {{factura.total}}', tam: 10, negrita: true, alinear: 'derecha' }),
+    el('texto', 120, 245, 75, 20, { texto: 'Base: {{factura.base_imponible|moneda}}\nIVA: {{factura.cuota_iva|moneda}}\nTOTAL: {{factura.total|moneda}}', tam: 10, negrita: true, alinear: 'derecha' }),
     el('texto', 15, 268, 180, 9, { texto: 'Forma de pago: {{factura.forma_pago}}. {{factura.observaciones}}', tam: 8, negrita: false, alinear: 'izquierda' }),
   ];
   return d;
@@ -444,6 +491,12 @@ function marcaXML() {
   return x + '  </marca>\n';
 }
 
+// Datos de prueba de la vista previa: JSON dentro de un CDATA, para que viajen con la plantilla.
+function pruebaXML() {
+  if (!doc.prueba) return '';
+  return `  <datos_prueba><![CDATA[${doc.prueba.replace(/\]\]>/g, ']]]]><![CDATA[>')}]]></datos_prueba>\n`;
+}
+
 function toXML() {
   const m = doc.margen;
   let x = '<?xml version="1.0" encoding="UTF-8"?>\n';
@@ -452,6 +505,7 @@ function toXML() {
   x += `    <margen superior="${num(m.superior)}" inferior="${num(m.inferior)}" izquierda="${num(m.izquierda)}" derecha="${num(m.derecha)}"/>\n`;
   x += '  </pagina>\n';
   x += marcaXML();
+  x += pruebaXML();
   x += `  <cabecera altura="${num(doc.cabAlt)}">\n`;
   x += doc.elementos.filter((e) => !esHijo(e) && banda(e) === 'cabecera').map(elementoXML).join('');
   x += '  </cabecera>\n';
@@ -499,6 +553,8 @@ function fromXML(texto) {
     alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
     formato: s(c, 'formato', ''),
   }));
+  const dp = hijo(raiz, 'datos_prueba');
+  if (dp) nuevo.prueba = dp.textContent.trim();
   const mk = hijo(raiz, 'marca');
   if (mk) {
     const m = marcaPorDefecto();
@@ -724,19 +780,19 @@ function render() {
   doc.elementos.filter((e) => !esHijo(e)).forEach((e) => pagina.appendChild(dibujarElemento(e)));
 }
 
-function dibujarMarca(k, W, H) {
-  const s = S();
-  const caja = div('marca' + (sel === 'marca' ? ' sel' : ''), { width: px(W), height: px(H) });
+function dibujarMarca(k, W, H, s = S(), seleccionada = sel === 'marca') {
+  const pxl = (mm) => (mm * s) + 'px';
+  const caja = div('marca' + (seleccionada ? ' sel' : ''), { width: pxl(W), height: pxl(H) });
   const centro = div('marca-centro', { opacity: String(k.opacidad), transform: `rotate(${k.giro || 0}deg)` });
   if (k.contenido === 'imagen') {
     const url = k.datos ? urlImagen(k) : '';
     if (url) {
       const img = document.createElement('img');
-      img.src = url; img.draggable = false; img.style.width = px(k.ancho);
+      img.src = url; img.draggable = false; img.style.width = pxl(k.ancho);
       centro.appendChild(img);
     } else {
       centro.textContent = 'IMAGEN';
-      centro.style.fontSize = px(30);
+      centro.style.fontSize = pxl(30);
     }
   } else {
     centro.textContent = k.texto;
@@ -956,8 +1012,8 @@ pagina.addEventListener('pointermove', (ev) => {
 
 window.addEventListener('keydown', (ev) => {
   const ctrl = ev.ctrlKey || ev.metaKey;
-  if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!$('#lista').open) (ev.shiftKey ? guardarComo() : guardar()); return; }
-  if ($('#lista').open) return;
+  if (ctrl && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!$('#lista').open && !$('#previa').open) (ev.shiftKey ? guardarComo() : guardar()); return; }
+  if ($('#lista').open || $('#previa').open) return;
   const t = ev.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
   if (ctrl && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? rehacer() : deshacer(); return; }
@@ -1528,6 +1584,246 @@ $('#f-imagen').addEventListener('change', (ev) => {
 /*  Arranque                                                           */
 /* ------------------------------------------------------------------ */
 function todo() { render(); panelElemento(); }
+
+/* ------------------------------------------------------------------ */
+/*  Vista previa con datos de prueba                                   */
+/* ------------------------------------------------------------------ */
+const DATOS_PRUEBA = {
+  factura: {
+    serie: 'A', numero: 128, numero_completo: 'A-2026-0128', fecha: '2026-10-12', fecha_operacion: '2026-10-10',
+    simplificada: false, forma_pago: 'Transferencia a 30 días', observaciones: 'Gracias por su confianza.',
+    base_imponible: 1250, cuota_iva: 247.5, cuota_recargo: 0, porcentaje_retencion: 0, cuota_retencion: 0, total: 1497.5,
+  },
+  emisor: {
+    nombre: 'Informática Dos Lago S.L.', nif: 'B36000000', direccion: 'Rúa do Progreso, 12', codigo_postal: '36202',
+    municipio: 'Vigo', provincia: 'Pontevedra', pais: 'España', correo: 'facturas@ejemplo.com', logo: '',
+  },
+  cliente: {
+    nombre: 'Taller Mecánico Rías Baixas S.L.', documento: 'B36111111', direccion: 'Av. de Madrid, 45', codigo_postal: '36204',
+    municipio: 'Vigo', poblacion: 'Vigo', provincia: 'Pontevedra', pais: 'España', codigo: 'C-0042',
+  },
+  lineas: [
+    { descripcion: 'Mantenimiento mensual de equipos', cantidad: 1, unidad: 'ud', precio: 300, porcentaje_descuento: 0, importe: 300, porcentaje_iva: 21, comentario: false },
+    { descripcion: 'Licencia de software de gestión', cantidad: 5, unidad: 'ud', precio: 120, porcentaje_descuento: 10, importe: 540, porcentaje_iva: 21, comentario: false },
+    { descripcion: 'Cable de red Cat6 (rollo 100 m)', cantidad: 2, unidad: 'ud', precio: 85, porcentaje_descuento: 0, importe: 170, porcentaje_iva: 21, comentario: false },
+    { descripcion: 'Formación al personal', cantidad: 4, unidad: 'h', precio: 60, porcentaje_descuento: 0, importe: 240, porcentaje_iva: 10, comentario: true },
+  ],
+  impuestos: [
+    { tipo_iva: 'General', base_imponible: 1010, porcentaje_iva: 21, cuota_iva: 212.1, porcentaje_recargo: 0, cuota_recargo: 0 },
+    { tipo_iva: 'Reducido', base_imponible: 240, porcentaje_iva: 10, cuota_iva: 24, porcentaje_recargo: 0, cuota_recargo: 0 },
+  ],
+  programa: { nombre: 'Gestión Dos Lago', version: '3.2.0' },
+};
+const datosPruebaTexto = () => doc.prueba || JSON.stringify(DATOS_PRUEBA, null, 2);
+let zoomPrevia = 0.8;
+
+function rutaDe(obj, r) {
+  return String(r).split('.').reduce((o, k) => (o !== null && typeof o === 'object' ? o[k] : undefined), obj);
+}
+function formatear(v, f) {
+  if (v === undefined || v === null) return '';
+  if (typeof v === 'boolean') return v ? 'sí' : 'no';
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (f === 'moneda') return Number.isFinite(n) ? n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : String(v);
+  if (f === 'numero') return Number.isFinite(n) ? n.toLocaleString('es-ES', { maximumFractionDigits: 4 }) : String(v);
+  if (f === 'fecha') { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v)); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v); }
+  return String(v);
+}
+// Sustituye {{ruta}} y {{ruta|formato}}; lo que no existe queda resaltado y se anota en `avisos`.
+function rellenar(texto, datos, avisos) {
+  const frag = document.createDocumentFragment();
+  const re = /\{\{\s*([\w.]+)\s*(?:\|\s*(\w+)\s*)?\}\}/g;
+  let ult = 0, m;
+  while ((m = re.exec(texto))) {
+    frag.append(texto.slice(ult, m.index));
+    const v = rutaDe(datos, m[1]);
+    if (v === undefined || (v !== null && typeof v === 'object')) {
+      avisos.add(m[1]);
+      const sp = document.createElement('span');
+      sp.className = 'falta'; sp.textContent = m[0];
+      frag.append(sp);
+    } else {
+      frag.append(formatear(v, m[2]));
+    }
+    ult = m.index + m[0].length;
+  }
+  frag.append(texto.slice(ult));
+  return frag;
+}
+
+function previaTabla(e, datos, sc, avisos) {
+  const pv = (mm) => (mm * sc) + 'px';
+  const t = document.createElement('table');
+  t.className = 'pv-tabla';
+  t.style.left = pv(0); t.style.top = pv(0); t.style.width = pv(e.w);
+  t.style.fontSize = (e.tam * PT * sc) + 'px';
+  const cg = document.createElement('colgroup');
+  const total = e.columnas.reduce((a, c) => a + (+c.ancho || 0), 0) || 1;
+  e.columnas.forEach((c) => { const col = document.createElement('col'); col.style.width = ((+c.ancho || 0) / total * 100) + '%'; cg.appendChild(col); });
+  t.appendChild(cg);
+  const linea = e.borde > 0 ? Math.max(1, e.borde * sc) + 'px solid #000' : 'none';
+  const celda = (c) => { const x = document.createElement('td'); x.style.textAlign = alineacion(c.alinear); x.style.border = linea; x.style.height = (altoFila(e) * sc) + 'px'; return x; };
+  if (e.titulos) {
+    const fh = t.createTHead().insertRow();
+    e.columnas.forEach((c) => {
+      const th = document.createElement('th');
+      th.textContent = c.titulo; th.style.textAlign = alineacion(c.alinear); th.style.border = linea;
+      th.style.height = (altoFila(e) * sc) + 'px';
+      if (e.relleno) th.style.background = e.relleno;
+      fh.appendChild(th);
+    });
+  }
+  const tb = t.createTBody();
+  let filas;
+  if (e.datos) {
+    const l = datos[e.datos];
+    if (!Array.isArray(l)) { avisos.add(e.datos + ' (debe ser una lista)'); filas = []; } else filas = l;
+    filas.forEach((f) => {
+      const fr = tb.insertRow();
+      e.columnas.forEach((c) => {
+        const td = celda(c); const v = rutaDe(f, c.campo);
+        if (v === undefined) avisos.add(e.datos + '[].' + c.campo);
+        td.textContent = formatear(v, c.formato); fr.appendChild(td);
+      });
+    });
+  } else {
+    const fr = tb.insertRow();
+    e.columnas.forEach((c) => {
+      const td = celda(c); const v = rutaDe(datos, c.campo);
+      if (v === undefined) avisos.add(c.campo);
+      td.textContent = formatear(v, c.formato); fr.appendChild(td);
+    });
+  }
+  return t;
+}
+
+function previaElemento(e, datos, sc, avisos) {
+  const pv = (mm) => (mm * sc) + 'px';
+  let caja;
+  if (e.tipo === 'linea') {
+    const g = Math.max(1, e.grosor * sc);
+    caja = div('pv-el', { left: pv(e.x), top: pv(e.y) , width: pv(e.w), height: '0px' });
+    caja.appendChild(div('trazo', { height: g + 'px', marginTop: -g / 2 + 'px' }));
+  } else if (e.tipo === 'tabla') {
+    caja = div('pv-el', { left: pv(e.x), top: pv(e.y), width: pv(e.w) });
+    caja.appendChild(previaTabla(e, datos, sc, avisos));
+  } else {
+    caja = div('pv-el', { left: pv(e.x), top: pv(e.y), width: pv(e.w), height: pv(e.h) });
+    const c = div('c');
+    if (e.tipo === 'texto') {
+      c.appendChild(rellenar(e.texto || '', datos, avisos));
+      c.style.fontSize = (e.tam * PT * sc) + 'px';
+      c.style.fontWeight = e.negrita ? '700' : '400';
+      c.style.textAlign = alineacion(e.alinear);
+      c.style.lineHeight = '1.2';
+      if (e.borde > 0) c.style.border = Math.max(1, e.borde * sc) + 'px solid #000';
+      if (e.relleno) c.style.background = e.relleno;
+      if (e.borde > 0 || e.relleno) c.style.padding = (1 * sc) + 'px';
+    } else if (e.tipo === 'logo') {
+      const url = e.datos ? urlImagen(e) : '';
+      if (url) { const img = document.createElement('img'); img.src = url; c.appendChild(img); }
+      else { c.style.cssText += ';color:#94a3b8;border:1px dashed #cbd5e1;font-size:' + (8 * sc) + 'px;display:flex;align-items:center;justify-content:center'; c.textContent = e.nombre || 'logo'; }
+    } else if (e.tipo === 'rectangulo') {
+      c.style.border = Math.max(1, e.grosor * sc) + 'px solid #000';
+      if (e.relleno) c.style.background = e.relleno;
+    }
+    caja.appendChild(c);
+    if (e.tipo === 'rectangulo') hijosDe(e).forEach((h) => caja.appendChild(previaElemento(h, datos, sc, avisos)));
+  }
+  if (e.giro) caja.style.transform = `rotate(${e.giro}deg)`;
+  return caja;
+}
+
+function pintarPrevia() {
+  const cont = $('#previa-paginas');
+  const av = $('#previa-avisos');
+  let datos;
+  try { datos = JSON.parse($('#previa-json').value); } catch (err) {
+    av.className = 'error'; av.textContent = 'JSON no válido: ' + err.message; return false;
+  }
+  if (datos === null || typeof datos !== 'object' || Array.isArray(datos)) {
+    av.className = 'error'; av.textContent = 'Los datos deben ser un objeto JSON ({ ... }).'; return false;
+  }
+  const avisos = new Set();
+  const [W, H] = dims();
+  const sc = MM * zoomPrevia;
+  const pv = (mm) => (mm * sc) + 'px';
+  let filas = [];
+  if (Array.isArray(datos[doc.datos])) filas = datos[doc.datos]; else avisos.add(doc.datos + ' (lista del cuerpo)');
+  const rh = altoFila({ tam: 9 });
+  const area = H - doc.cabAlt - doc.pieAlt;
+  const porPagina = Math.max(1, Math.floor((area - rh) / rh));
+  const paginas = Math.max(1, Math.ceil(filas.length / porPagina));
+  const m = doc.margen;
+  const total = doc.columnas.reduce((a, c) => a + (+c.ancho || 0), 0) || 1;
+  cont.innerHTML = '';
+  for (let n = 0; n < paginas; n++) {
+    const pag = div('pv-pagina', { width: pv(W), height: pv(H) });
+    if (doc.marca) pag.appendChild(dibujarMarca(doc.marca, W, H, sc, false));
+    doc.elementos.filter((e) => !esHijo(e)).forEach((e) => pag.appendChild(previaElemento(e, datos, sc, avisos)));
+    // Tabla del cuerpo: una fila por elemento de la lista; la cabecera se repite en cada página.
+    const t = document.createElement('table');
+    t.className = 'pv-tabla';
+    t.style.left = pv(m.izquierda); t.style.top = pv(doc.cabAlt); t.style.width = pv(W - m.izquierda - m.derecha);
+    t.style.fontSize = (9 * PT * sc) + 'px';
+    const cg = document.createElement('colgroup');
+    doc.columnas.forEach((c) => { const col = document.createElement('col'); col.style.width = ((+c.ancho || 0) / total * 100) + '%'; cg.appendChild(col); });
+    t.appendChild(cg);
+    const fh = t.createTHead().insertRow();
+    doc.columnas.forEach((c) => {
+      const th = document.createElement('th');
+      th.textContent = c.titulo; th.style.textAlign = alineacion(c.alinear); th.style.height = (rh * sc) + 'px';
+      th.style.borderBottom = '1px solid #000';
+      fh.appendChild(th);
+    });
+    const tb = t.createTBody();
+    filas.slice(n * porPagina, (n + 1) * porPagina).forEach((f) => {
+      const fr = tb.insertRow();
+      doc.columnas.forEach((c) => {
+        const td = fr.insertCell();
+        const v = rutaDe(f, c.campo);
+        if (v === undefined) avisos.add(doc.datos + '[].' + c.campo);
+        td.textContent = formatear(v, c.formato); td.style.textAlign = alineacion(c.alinear); td.style.height = (rh * sc) + 'px';
+        td.style.borderBottom = '1px solid #e2e8f0';
+      });
+    });
+    pag.appendChild(t);
+    cont.appendChild(pag);
+    cont.appendChild(div('pv-num')).textContent = `Página ${n + 1} de ${paginas}`;
+  }
+  av.className = avisos.size ? 'error' : 'ayuda';
+  av.textContent = avisos.size ? 'Sin datos para: ' + Array.from(avisos).join(', ') : `Todo resuelto. ${filas.length} línea(s), ${paginas} página(s).`;
+  return true;
+}
+
+function abrirPrevia() {
+  $('#previa-json').value = datosPruebaTexto();
+  zoomPrevia = parseFloat($('#previa-zoom').value);
+  $('#previa').showModal();
+  pintarPrevia();
+}
+$('#b-previa').addEventListener('click', abrirPrevia);
+$('#previa-cerrar').addEventListener('click', () => $('#previa').close());
+$('#previa-zoom').addEventListener('change', (ev) => { zoomPrevia = parseFloat(ev.target.value); pintarPrevia(); });
+$('#previa-aplicar').addEventListener('click', () => {
+  if (!pintarPrevia()) return;
+  const texto = $('#previa-json').value.trim();
+  doc.prueba = texto === JSON.stringify(DATOS_PRUEBA, null, 2) ? '' : texto;   // el ejemplo por defecto no se guarda
+  commit();
+});
+$('#previa-ejemplo').addEventListener('click', () => {
+  $('#previa-json').value = JSON.stringify(DATOS_PRUEBA, null, 2);
+  if (pintarPrevia()) { doc.prueba = ''; commit(); }
+});
+$('#previa-muchas').addEventListener('click', () => {
+  try {
+    const d = JSON.parse($('#previa-json').value);
+    const base = Array.isArray(d[doc.datos]) && d[doc.datos].length ? d[doc.datos] : DATOS_PRUEBA.lineas;
+    d[doc.datos] = Array.from({ length: 60 }, (_, i) => Object.assign({}, base[i % base.length], { descripcion: `Línea ${i + 1}: ` + String(base[i % base.length].descripcion || '') }));
+    $('#previa-json').value = JSON.stringify(d, null, 2);
+    pintarPrevia();
+  } catch (err) { pintarPrevia(); }
+});
 
 // Sugerencias para los campos «Datos» y «Campo» (desplegables de escritura libre).
 (function crearListas() {

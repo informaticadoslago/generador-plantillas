@@ -32,9 +32,9 @@ Fecha: {{factura.fecha}}</texto>
       <columna campo="cuota_iva" titulo="Cuota IVA" ancho="30" alinear="derecha" formato="moneda"/>
       <columna campo="cuota_recargo" titulo="Recargo" ancho="20" alinear="derecha" formato="moneda"/>
     </tabla>
-    <texto x="120" y="245" ancho="75" alto="20" tam="10" negrita="true" alinear="derecha">Base: {{factura.base_imponible}}
-IVA: {{factura.cuota_iva}}
-TOTAL: {{factura.total}}</texto>
+    <texto x="120" y="245" ancho="75" alto="20" tam="10" negrita="true" alinear="derecha">Base: {{factura.base_imponible|moneda}}
+IVA: {{factura.cuota_iva|moneda}}
+TOTAL: {{factura.total|moneda}}</texto>
     <texto x="15" y="268" ancho="180" alto="9" tam="8" negrita="false" alinear="izquierda">Forma de pago: {{factura.forma_pago}}. {{factura.observaciones}}</texto>
   </pie>
 </plantilla>

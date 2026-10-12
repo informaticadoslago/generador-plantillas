@@ -48,6 +48,14 @@ Se usan como `{{grupo.campo}}` en textos y como `campo` en las columnas (el edit
 - `impuestos` (se repite por cada tipo de IVA; tabla del pie): `tipo_iva`, `base_imponible`, `porcentaje_iva`, `cuota_iva`, `porcentaje_recargo`, `cuota_recargo`
 - `programa`: `nombre`, `version`
 
+## Vista previa con datos de prueba
+
+El botón **Previsualizar** abre un diálogo con la plantilla rellena con un JSON de prueba (el lienzo sigue enseñando `{campo}`). Por defecto usa una factura de ejemplo con todos los campos; el JSON se puede editar y **Aplicar** lo guarda dentro de la plantilla, en `<datos_prueba><![CDATA[...]]></datos_prueba>` (hijo de `<plantilla>`, tras `<pagina>`/`<marca>`). «Restaurar ejemplo» lo borra. Avisa de los campos o listas que faltan (resaltados en amarillo). Reglas de sustitución, las mismas que usará el generador real:
+
+- `{{ruta.al.campo}}` toma el valor del JSON; `{{ruta|formato}}` lo formatea (`moneda` = 1497,50 €, `numero`, `fecha` = dd/mm/aaaa); los booleanos salen como sí/no. Un valor `null` sale vacío.
+- El cuerpo y las tablas con `datos="lista"` repiten una fila por elemento; el `campo` de cada columna se busca dentro del elemento (admite rutas con puntos). Una tabla sin `datos` toma `campo` como ruta completa.
+- Paginación del cuerpo en la vista previa: filas de `altoFila(9 pt)`, cabecera de columnas repetida en cada página, y cabecera y pie completos repetidos en todas las páginas (decisión abierta, ver abajo).
+
 ## Decisiones tomadas
 
 - Página definida primero: `formato` (A4 por defecto), `orientacion` (vertical/horizontal), márgenes. Equivale a `@page { size: A4 portrait; margin: ... }`.
