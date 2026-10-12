@@ -19,6 +19,7 @@ Abre http://localhost:8000. La base de datos se crea sola en `datos/plantillas.s
 - La imagen del logo se guarda dentro del XML en base64 (máx. 500 KB).
 - Las columnas del cuerpo se reordenan arrastrando el asa de dos líneas.
 - Giro de cualquier elemento (botones, campo en grados o el círculo que sale encima): líneas verticales, texto en vertical, recuadros con borde y relleno.
+- **Tablas libres** en cabecera o pie (por ejemplo el desglose de IVA), distintas de la del cuerpo: lista que se repite, columnas reordenables y altura automática. Desplegables con los campos de factura, emisor, cliente, líneas, impuestos y programa.
 - **Rectángulo contenedor**: puede llevar textos, logos y líneas dentro; al girarlo gira todo. Cada elemento se puede desvincular (o vincular) desde su panel sin moverlo de sitio.
 - **Marca de agua** a página completa, detrás de todo: texto o imagen (base64) girados y con opacidad casi total.
 - Arrastrar, redimensionar con el asa, imán a la rejilla (Alt = ajuste fino), flechas, duplicar, eliminar, deshacer/rehacer.

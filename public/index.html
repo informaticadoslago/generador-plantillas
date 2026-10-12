@@ -135,6 +135,9 @@
   .marca.sel { outline: 2px solid var(--acento); outline-offset: -2px; }
   .marca-centro { white-space: pre; line-height: 1; text-align: center; }
   .marca-centro img { display: block; max-width: none; }
+  .tabla-libre { width: 100%; border-collapse: collapse; table-layout: fixed; background: #fff; }
+  .tabla-libre th, .tabla-libre td { padding: 0 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #475569; font-weight: 400; }
+  .tabla-libre th { color: #0f172a; font-weight: 600; }
   .guia-margen { position: absolute; border: 1px dashed #e11d48; pointer-events: none; opacity: .55; }
   .guia-banda { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--acento); pointer-events: none; opacity: .7; }
   .guia-banda span {
@@ -162,6 +165,7 @@
   <button data-add="texto" title="Añadir texto">+ Texto</button>
   <button data-add="linea" title="Añadir línea horizontal">+ Línea</button>
   <button data-add="rectangulo" title="Añadir rectángulo">+ Rectángulo</button>
+  <button data-add="tabla" title="Añadir una tabla a la cabecera o al pie (distinta de la del cuerpo)">+ Tabla</button>
   <button id="b-marca" title="Marca de agua a página completa (texto o imagen, girada y casi transparente)">Marca de agua</button>
   <span class="sep"></span>
   <button id="b-duplicar" title="Duplicar (Ctrl+D)">Duplicar</button>
@@ -185,6 +189,8 @@
   <input type="file" id="f-importar" accept=".xml,text/xml,application/xml" hidden>
   <input type="file" id="f-imagen" accept="image/*" hidden>
 </div>
+<datalist id="dl-listas"></datalist>
+<datalist id="dl-campos-todos"></datalist>
 
 <div id="lienzo"><div id="pagina"></div></div>
 
@@ -236,13 +242,28 @@ const panel = $('#panel');
 
 function nuevoId() { return 'e' + (uid++); }
 
+/* Datos que recibe el informe (el generador de facturas los rellena). */
+const CAMPOS = {                    // se usan como {{grupo.campo}}
+  factura: ['serie', 'numero', 'numero_completo', 'fecha', 'fecha_operacion', 'simplificada', 'forma_pago', 'observaciones',
+    'base_imponible', 'cuota_iva', 'cuota_recargo', 'porcentaje_retencion', 'cuota_retencion', 'total'],
+  emisor: ['nombre', 'nif', 'direccion', 'codigo_postal', 'municipio', 'provincia', 'pais', 'correo', 'logo'],
+  cliente: ['nombre', 'documento', 'direccion', 'codigo_postal', 'municipio', 'poblacion', 'provincia', 'pais', 'codigo'],
+  programa: ['nombre', 'version'],
+};
+const LISTAS = {                    // listas que se repiten (cuerpo o tabla con datos="...")
+  lineas: ['descripcion', 'cantidad', 'unidad', 'precio', 'porcentaje_descuento', 'importe', 'porcentaje_iva', 'comentario'],
+  impuestos: ['tipo_iva', 'base_imponible', 'porcentaje_iva', 'cuota_iva', 'porcentaje_recargo', 'cuota_recargo'],
+};
+const TODOS_LOS_CAMPOS = Object.entries(CAMPOS).flatMap(([g, cs]) => cs.map((c) => g + '.' + c));
+
 function columnasPorDefecto() {
   return [
-    { campo: 'concepto', titulo: 'Concepto', ancho: 46, alinear: 'izquierda', formato: '' },
-    { campo: 'cantidad', titulo: 'Cant.', ancho: 10, alinear: 'derecha', formato: '' },
+    { campo: 'descripcion', titulo: 'Descripción', ancho: 44, alinear: 'izquierda', formato: '' },
+    { campo: 'cantidad', titulo: 'Cant.', ancho: 9, alinear: 'derecha', formato: '' },
     { campo: 'precio', titulo: 'Precio', ancho: 14, alinear: 'derecha', formato: 'moneda' },
-    { campo: 'iva', titulo: 'IVA %', ancho: 12, alinear: 'derecha', formato: '' },
-    { campo: 'importe', titulo: 'Importe', ancho: 18, alinear: 'derecha', formato: 'moneda' },
+    { campo: 'porcentaje_descuento', titulo: 'Dto. %', ancho: 9, alinear: 'derecha', formato: '' },
+    { campo: 'porcentaje_iva', titulo: 'IVA %', ancho: 10, alinear: 'derecha', formato: '' },
+    { campo: 'importe', titulo: 'Importe', ancho: 14, alinear: 'derecha', formato: 'moneda' },
   ];
 }
 
@@ -266,17 +287,36 @@ function el(tipo, x, y, w, h, extra) {
   return Object.assign({ id: nuevoId(), tipo, x, y, w, h, giro: 0 }, extra);
 }
 
+/* Tabla libre (cabecera o pie): distinta de la del cuerpo. Altura automática: fila fija por tamaño de letra. */
+function tablaNueva(x, y, w) {
+  const t = el('tabla', x, y, w, 0, {
+    datos: 'impuestos', tam: 8, borde: 0.2, relleno: '#e2e8f0', titulos: true,
+    columnas: [
+      { campo: 'base_imponible', titulo: 'Base', ancho: 30, alinear: 'derecha', formato: 'moneda' },
+      { campo: 'porcentaje_iva', titulo: '% IVA', ancho: 20, alinear: 'derecha', formato: '' },
+      { campo: 'cuota_iva', titulo: 'Cuota IVA', ancho: 30, alinear: 'derecha', formato: 'moneda' },
+      { campo: 'cuota_recargo', titulo: 'Recargo', ancho: 20, alinear: 'derecha', formato: 'moneda' },
+    ],
+  });
+  ajustarTabla(t);
+  return t;
+}
+function altoFila(t) { return r2(t.tam * 25.4 / 72 * 1.3 + 1.6); }   // mm
+function filasMuestra(t) { return t.datos ? 3 : 1; }                  // filas de ejemplo en el editor
+function ajustarTabla(t) { t.h = r2(altoFila(t) * ((t.titulos ? 1 : 0) + filasMuestra(t))); }
+
 function plantillaEjemplo() {
   const d = plantillaVacia();
   d.nombre = 'factura';
   d.elementos = [
     el('logo', 15, 10, 40, 20, { nombre: 'logo.png', mime: '', datos: '' }),
-    el('texto', 65, 10, 70, 20, { texto: '{{emisor.nombre}}\n{{emisor.nif}}\n{{emisor.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
-    el('texto', 140, 10, 55, 14, { texto: 'Factura nº {{numero}}\nFecha: {{fecha}}', tam: 11, negrita: true, alinear: 'derecha' }),
-    el('texto', 110, 35, 85, 25, { texto: '{{cliente.nombre}}\n{{cliente.nif}}\n{{cliente.direccion}}', tam: 10, negrita: false, alinear: 'izquierda' }),
+    el('texto', 65, 10, 70, 20, { texto: '{{emisor.nombre}}\n{{emisor.nif}}\n{{emisor.direccion}}\n{{emisor.municipio}}', tam: 10, negrita: false, alinear: 'izquierda' }),
+    el('texto', 115, 10, 80, 14, { texto: 'Factura {{factura.numero_completo}}\nFecha: {{factura.fecha}}', tam: 11, negrita: true, alinear: 'derecha' }),
+    el('texto', 110, 35, 85, 25, { texto: '{{cliente.nombre}}\n{{cliente.documento}}\n{{cliente.direccion}}\n{{cliente.municipio}}', tam: 10, negrita: false, alinear: 'izquierda' }),
     el('linea', 15, 66, 180, 0, { grosor: 0.3 }),
-    el('texto', 120, 245, 75, 20, { texto: 'Base imponible: {{totales.base}}\nIVA: {{totales.iva}}\nTOTAL: {{totales.total}}', tam: 11, negrita: true, alinear: 'derecha' }),
-    el('texto', 15, 268, 180, 9, { texto: 'Forma de pago: {{formaPago}}. {{textoLegal}}', tam: 8, negrita: false, alinear: 'izquierda' }),
+    tablaNueva(15, 246, 100),
+    el('texto', 120, 245, 75, 20, { texto: 'Base: {{factura.base_imponible}}\nIVA: {{factura.cuota_iva}}\nTOTAL: {{factura.total}}', tam: 10, negrita: true, alinear: 'derecha' }),
+    el('texto', 15, 268, 180, 9, { texto: 'Forma de pago: {{factura.forma_pago}}. {{factura.observaciones}}', tam: 8, negrita: false, alinear: 'izquierda' }),
   ];
   return d;
 }
@@ -362,6 +402,10 @@ function mensaje(txt, esError) {
 /* ------------------------------------------------------------------ */
 /*  XML: exportar e importar                                           */
 /* ------------------------------------------------------------------ */
+function columnaXML(c) {
+  return `    <columna campo="${esc(c.campo)}" titulo="${esc(c.titulo)}" ancho="${num(c.ancho)}" alinear="${c.alinear}" formato="${esc(c.formato || '')}"/>\n`;
+}
+
 function elementoXML(e) {
   const p = `x="${num(e.x)}" y="${num(e.y)}"${e.giro ? ` giro="${num(e.giro)}"` : ''}`;
   switch (e.tipo) {
@@ -373,6 +417,9 @@ function elementoXML(e) {
       return `    <texto ${p} ancho="${num(e.w)}" alto="${num(e.h)}" tam="${num(e.tam)}" negrita="${e.negrita ? 'true' : 'false'}" alinear="${e.alinear}"${e.borde > 0 ? ` borde="${num(e.borde)}"` : ''}${e.relleno ? ` relleno="${esc(e.relleno)}"` : ''}>${esc(e.texto || '')}</texto>\n`;
     case 'linea':
       return `    <linea ${p} largo="${num(e.w)}" grosor="${num(e.grosor)}"/>\n`;
+    case 'tabla':
+      return `    <tabla ${p} ancho="${num(e.w)}" tam="${num(e.tam)}" datos="${esc(e.datos || '')}" titulos="${e.titulos ? 'true' : 'false'}" borde="${num(e.borde)}" relleno="${esc(e.relleno || '')}">\n`
+        + e.columnas.map((c) => '  ' + columnaXML(c)).join('') + '    </tabla>\n';
     case 'rectangulo': {
       const a = `<rectangulo ${p} ancho="${num(e.w)}" alto="${num(e.h)}" grosor="${num(e.grosor)}" relleno="${esc(e.relleno || '')}"`;
       const hs = hijosDe(e);
@@ -409,8 +456,7 @@ function toXML() {
   x += doc.elementos.filter((e) => !esHijo(e) && banda(e) === 'cabecera').map(elementoXML).join('');
   x += '  </cabecera>\n';
   x += `  <cuerpo datos="${esc(doc.datos)}">\n`;
-  x += doc.columnas.map((c) =>
-    `    <columna campo="${esc(c.campo)}" titulo="${esc(c.titulo)}" ancho="${num(c.ancho)}" alinear="${c.alinear}" formato="${esc(c.formato || '')}"/>\n`).join('');
+  x += doc.columnas.map(columnaXML).join('');
   x += '  </cuerpo>\n';
   x += `  <pie altura="${num(doc.pieAlt)}">\n`;
   x += doc.elementos.filter((e) => !esHijo(e) && banda(e) === 'pie').map(elementoXML).join('');
@@ -448,6 +494,11 @@ function fromXML(texto) {
     }
   }
 
+  const leerColumnas = (nodo) => Array.from(nodo.children).filter((c) => c.nodeName === 'columna').map((c) => ({
+    campo: s(c, 'campo', ''), titulo: s(c, 'titulo', ''), ancho: n(c, 'ancho', 10),
+    alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
+    formato: s(c, 'formato', ''),
+  }));
   const mk = hijo(raiz, 'marca');
   if (mk) {
     const m = marcaPorDefecto();
@@ -489,6 +540,13 @@ function fromXML(texto) {
           borde: Math.max(0, n(c, 'borde', 0)), relleno: s(c, 'relleno', ''),
           alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
         }));
+      } else if (c.nodeName === 'tabla' && !padre) {
+        const t = el('tabla', base.x, base.y, Math.max(5, n(c, 'ancho', 100)), 0, {
+          datos: s(c, 'datos', ''), tam: Math.max(1, n(c, 'tam', 9)), borde: Math.max(0, n(c, 'borde', 0.2)),
+          relleno: s(c, 'relleno', '#e2e8f0'), titulos: s(c, 'titulos', 'true') !== 'false', columnas: leerColumnas(c),
+        });
+        ajustarTabla(t);
+        nuevo.elementos.push(t);
       } else if (c.nodeName === 'linea') {
         nuevo.elementos.push(el('linea', base.x, base.y, n(c, 'largo', 50), 0, { grosor: n(c, 'grosor', 0.3) }));
       } else if (c.nodeName === 'rectangulo') {
@@ -516,14 +574,8 @@ function fromXML(texto) {
   const cu = hijo(raiz, 'cuerpo');
   if (cu) {
     nuevo.datos = s(cu, 'datos', 'lineas');
-    const cols = Array.from(cu.children).filter((c) => c.nodeName === 'columna');
-    if (cols.length) {
-      nuevo.columnas = cols.map((c) => ({
-        campo: s(c, 'campo', ''), titulo: s(c, 'titulo', ''), ancho: n(c, 'ancho', 10),
-        alinear: ['izquierda', 'centro', 'derecha'].includes(s(c, 'alinear', 'izquierda')) ? s(c, 'alinear', 'izquierda') : 'izquierda',
-        formato: s(c, 'formato', ''),
-      }));
-    }
+    const cols = leerColumnas(cu);
+    if (cols.length) nuevo.columnas = cols;
   }
   leerElementos(pie);
   return nuevo;
@@ -715,6 +767,44 @@ function urlImagen(e) {
   return u;
 }
 
+function tablaDOM(e, s) {
+  const tabla = document.createElement('table');
+  tabla.className = 'tabla-libre';
+  tabla.style.fontSize = (e.tam * PT * s) + 'px';
+  const cg = document.createElement('colgroup');
+  const total = e.columnas.reduce((a, c) => a + (+c.ancho || 0), 0) || 1;
+  e.columnas.forEach((c) => {
+    const col = document.createElement('col');
+    col.style.width = ((+c.ancho || 0) / total * 100) + '%';
+    cg.appendChild(col);
+  });
+  tabla.appendChild(cg);
+  const linea = e.borde > 0 ? Math.max(1, e.borde * s) + 'px solid #000' : 'none';
+  const estilo = (celda, c) => {
+    celda.style.textAlign = alineacion(c.alinear);
+    celda.style.border = linea;
+    celda.style.height = (altoFila(e) * s) + 'px';
+  };
+  if (e.titulos) {
+    const fh = tabla.createTHead().insertRow();
+    e.columnas.forEach((c) => {
+      const th = document.createElement('th');
+      th.textContent = c.titulo; estilo(th, c);
+      if (e.relleno) th.style.background = e.relleno;
+      fh.appendChild(th);
+    });
+  }
+  const tb = tabla.createTBody();
+  for (let i = 0; i < filasMuestra(e); i++) {
+    const fila = tb.insertRow();
+    e.columnas.forEach((c) => {
+      const td = fila.insertCell();
+      td.textContent = '{' + c.campo + '}'; estilo(td, c);
+    });
+  }
+  return tabla;
+}
+
 function dibujarElemento(e) {
   const s = S();
   const esSel = sel === e.id;
@@ -744,6 +834,9 @@ function dibujarElemento(e) {
       } else {
         c.textContent = 'LOGO\n' + (e.nombre || '(sin imagen)');
       }
+    } else if (e.tipo === 'tabla') {
+      c.style.overflow = 'hidden';
+      c.appendChild(tablaDOM(e, s));
     } else if (e.tipo === 'rectangulo') {
       c.style.border = Math.max(1, e.grosor * s) + 'px solid #000';
       if (e.relleno) c.style.background = e.relleno;
@@ -832,12 +925,12 @@ function moverDrag(ev) {
     const girar = (a, b) => [a * cos - b * sin, a * sin + b * cos];
     const minimo = paso > 0 ? paso : 1;
     const w = Math.max(minimo, snap(drag.ow + ldx, paso));
-    const h = e.tipo === 'linea' ? 0 : Math.max(minimo, snap(drag.oh + ldy, paso));
+    const h = e.tipo === 'linea' ? 0 : e.tipo === 'tabla' ? drag.oh : Math.max(minimo, snap(drag.oh + ldy, paso));
     const [ax, ay] = girar(-drag.ow / 2, -drag.oh / 2);
     const esqX = drag.ox + drag.ow / 2 + ax, esqY = drag.oy + drag.oh / 2 + ay;
     const [bx, by] = girar(w / 2, h / 2);
     e.w = w;
-    if (e.tipo !== 'linea') e.h = h;
+    if (e.tipo !== 'linea' && e.tipo !== 'tabla') e.h = h;
     e.x = r2(esqX + bx - w / 2);
     e.y = r2(esqY + by - h / 2);
     if (!drag.hijo) dentroDePagina(e);
@@ -894,7 +987,7 @@ function anadir(tipo) {
   const actual = sel && sel !== 'cuerpo' && sel !== 'marca' ? porId(sel) : null;
   const cont = actual ? (actual.tipo === 'rectangulo' ? actual : padreDe(actual)) : null;
   let e;
-  if (cont && tipo !== 'rectangulo') {
+  if (cont && tipo !== 'rectangulo' && tipo !== 'tabla') {
     const mg = Math.min(2, cont.w / 4, cont.h / 4);
     const iw = Math.max(5, r2(cont.w - 2 * mg)), ih = Math.max(3, r2(cont.h - 2 * mg));
     if (tipo === 'logo') e = el('logo', mg, mg, Math.min(40, iw), Math.min(20, ih), { nombre: '', mime: '', datos: '' });
@@ -906,7 +999,8 @@ function anadir(tipo) {
     commit();
     return;
   }
-  if (tipo === 'logo') e = el('logo', x, y, 40, 20, { nombre: '', mime: '', datos: '' });
+  if (tipo === 'tabla') e = tablaNueva(snap(m.izquierda), snap(dims()[1] - doc.pieAlt + 5), 100);
+  else if (tipo === 'logo') e = el('logo', x, y, 40, 20, { nombre: '', mime: '', datos: '' });
   else if (tipo === 'texto') e = el('texto', x, y, 60, 10, { texto: 'Texto {{campo}}', tam: 10, negrita: false, alinear: 'izquierda', borde: 0, relleno: '' });
   else if (tipo === 'linea') e = el('linea', x, y, 80, 0, { grosor: 0.3 });
   else e = el('rectangulo', x, y, 50, 15, { grosor: 0.3, relleno: '' });
@@ -1057,6 +1151,34 @@ function nota(txt, clase) {
   return p;
 }
 
+// Desplegable que inserta {{grupo.campo}} en la posición del cursor de un textarea.
+function selectorCampos(ta) {
+  const l = document.createElement('label');
+  l.className = 'campo';
+  l.append('Insertar campo');
+  const sl = document.createElement('select');
+  const vacio = document.createElement('option');
+  vacio.value = ''; vacio.textContent = 'Elegir campo…';
+  sl.appendChild(vacio);
+  for (const [g, cs] of Object.entries(CAMPOS)) {
+    const og = document.createElement('optgroup');
+    og.label = g;
+    cs.forEach((c) => { const o = document.createElement('option'); o.value = g + '.' + c; o.textContent = c; og.appendChild(o); });
+    sl.appendChild(og);
+  }
+  sl.addEventListener('change', () => {
+    if (!sl.value) return;
+    const ins = '{{' + sl.value + '}}';
+    const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+    ta.value = ta.value.slice(0, a) + ins + ta.value.slice(b);
+    ta.setSelectionRange(a + ins.length, a + ins.length);
+    ta.dispatchEvent(new Event('input'));
+    sl.value = '';
+  });
+  l.appendChild(sl);
+  return l;
+}
+
 function panelPlantilla(destino) {
   const m = doc.margen;
   destino.appendChild(seccion('Plantilla'));
@@ -1080,6 +1202,53 @@ function panelPlantilla(destino) {
   destino.appendChild(fila(campo('Imán a la rejilla', 'select', doc.paso, (v) => { doc.paso = parseFloat(v); },
     [['5', '5 mm'], ['1', '1 mm'], ['0.5', '0,5 mm'], ['0', 'Sin imán']])));
   destino.appendChild(nota('Alt al arrastrar: ajuste fino de 0,5 mm. Flechas: 1 mm (Mayús: 5 mm).'));
+}
+
+// Editor de columnas (cuerpo y tablas libres): campo, título, ancho, alineación, formato; reordenar con el asa.
+function panelColumnas(cols, lista) {
+  const suma = cols.reduce((a, c) => a + (+c.ancho || 0), 0);
+  panel.appendChild(nota(r2(suma) === 100 ? 'Anchos: suman 100 %.' : `Anchos: suman ${r2(suma)} %, deberían sumar 100.`, r2(suma) === 100 ? 'ayuda' : 'aviso'));
+  const contCols = document.createElement('div');
+  cols.forEach((c, i) => {
+    const caja = document.createElement('div');
+    caja.className = 'col';
+    caja.dataset.i = i;
+    const cab = document.createElement('div');
+    cab.className = 'col-cab';
+    const grip = document.createElement('span');
+    grip.className = 'grip';
+    grip.title = 'Arrastra para cambiar el orden';
+    grip.addEventListener('pointerdown', (ev) => iniciarOrden(ev, contCols, caja, cols));
+    const nombreCol = document.createElement('strong');
+    nombreCol.textContent = c.titulo || '(sin título)';
+    cab.append(grip, nombreCol);
+    caja.appendChild(cab);
+    const gc = campo('Campo', 'text', c.campo, (v) => { c.campo = v; });
+    if (lista) gc._inp.setAttribute('list', lista);
+    caja.appendChild(fila(
+      gc,
+      campo('Título', 'text', c.titulo, (v) => { c.titulo = v; nombreCol.textContent = v || '(sin título)'; }),
+    ));
+    caja.appendChild(fila(
+      campo('Ancho %', 'number', c.ancho, (v) => { c.ancho = v; }),
+      campo('Alinear', 'select', c.alinear, (v) => { c.alinear = v; }, [['izquierda', 'Izquierda'], ['centro', 'Centro'], ['derecha', 'Derecha']]),
+    ));
+    caja.appendChild(fila(campo('Formato', 'select', c.formato || '', (v) => { c.formato = v; },
+      [['', 'Ninguno'], ['moneda', 'Moneda'], ['numero', 'Número'], ['fecha', 'Fecha']])));
+    const q = document.createElement('button');
+    q.textContent = 'Quitar columna'; q.className = 'peligro';
+    q.addEventListener('click', () => { cols.splice(i, 1); panelElemento(); render(); commit(); });
+    caja.appendChild(q);
+    contCols.appendChild(caja);
+  });
+  panel.appendChild(contCols);
+  const a = document.createElement('button');
+  a.textContent = '+ Añadir columna';
+  a.addEventListener('click', () => {
+    cols.push({ campo: 'campo', titulo: 'Título', ancho: 10, alinear: 'izquierda', formato: '' });
+    panelElemento(); render(); commit();
+  });
+  panel.appendChild(a);
 }
 
 function panelElemento() {
@@ -1140,48 +1309,10 @@ function panelElemento() {
     panel.appendChild(q);
   } else if (sel === 'cuerpo') {
     panel.appendChild(seccion('Cuerpo (tabla de líneas)'));
-    panel.appendChild(fila(campo('Datos (lista del JSON)', 'text', doc.datos, (v) => { doc.datos = v; })));
-    const suma = doc.columnas.reduce((a, c) => a + (+c.ancho || 0), 0);
-    panel.appendChild(nota(r2(suma) === 100 ? 'Anchos: suman 100 %.' : `Anchos: suman ${r2(suma)} %, deberían sumar 100.`, r2(suma) === 100 ? 'ayuda' : 'aviso'));
-    const contCols = document.createElement('div');
-    doc.columnas.forEach((c, i) => {
-      const caja = document.createElement('div');
-      caja.className = 'col';
-      caja.dataset.i = i;
-      const cab = document.createElement('div');
-      cab.className = 'col-cab';
-      const grip = document.createElement('span');
-      grip.className = 'grip';
-      grip.title = 'Arrastra para cambiar el orden';
-      grip.addEventListener('pointerdown', (ev) => iniciarOrden(ev, contCols, caja));
-      const nombreCol = document.createElement('strong');
-      nombreCol.textContent = c.titulo || '(sin título)';
-      cab.append(grip, nombreCol);
-      caja.appendChild(cab);
-      caja.appendChild(fila(
-        campo('Campo', 'text', c.campo, (v) => { c.campo = v; }),
-        campo('Título', 'text', c.titulo, (v) => { c.titulo = v; nombreCol.textContent = v || '(sin título)'; }),
-      ));
-      caja.appendChild(fila(
-        campo('Ancho %', 'number', c.ancho, (v) => { c.ancho = v; }),
-        campo('Alinear', 'select', c.alinear, (v) => { c.alinear = v; }, [['izquierda', 'Izquierda'], ['centro', 'Centro'], ['derecha', 'Derecha']]),
-      ));
-      caja.appendChild(fila(campo('Formato', 'select', c.formato || '', (v) => { c.formato = v; },
-        [['', 'Ninguno'], ['moneda', 'Moneda'], ['numero', 'Número'], ['fecha', 'Fecha']])));
-      const q = document.createElement('button');
-      q.textContent = 'Quitar columna'; q.className = 'peligro';
-      q.addEventListener('click', () => { doc.columnas.splice(i, 1); panelElemento(); render(); commit(); });
-      caja.appendChild(q);
-      contCols.appendChild(caja);
-    });
-    panel.appendChild(contCols);
-    const a = document.createElement('button');
-    a.textContent = '+ Añadir columna';
-    a.addEventListener('click', () => {
-      doc.columnas.push({ campo: 'campo', titulo: 'Título', ancho: 10, alinear: 'izquierda', formato: '' });
-      panelElemento(); render(); commit();
-    });
-    panel.appendChild(a);
+    const gd = campo('Datos (lista del JSON)', 'text', doc.datos, (v) => { doc.datos = v; });
+    gd._inp.setAttribute('list', 'dl-listas');
+    panel.appendChild(fila(gd));
+    panelColumnas(doc.columnas, LISTAS[doc.datos] ? 'dl-campos-' + doc.datos : '');
   } else if (sel) {
     const e = porId(sel);
     if (e) {
@@ -1196,9 +1327,13 @@ function panelElemento() {
       if (e.tipo === 'linea') {
         panel.appendChild(fila(gw));
       } else {
-        const gh = campo('Alto (mm)', 'number', e.h, (v) => { e.h = Math.max(0.5, v); });
-        refs.h = gh._inp;
-        panel.appendChild(fila(gw, gh));
+        if (e.tipo === 'tabla') {
+          panel.appendChild(fila(gw));       // el alto sale de las filas
+        } else {
+          const gh = campo('Alto (mm)', 'number', e.h, (v) => { e.h = Math.max(0.5, v); });
+          refs.h = gh._inp;
+          panel.appendChild(fila(gw, gh));
+        }
       }
       const gg = campo(e.padre ? 'Giro propio (°, se suma al del rectángulo)' : 'Giro (°, sentido horario)', 'number', e.giro || 0, (v) => { e.giro = normGiro(v); });
       refs.giro = gg._inp;
@@ -1224,7 +1359,7 @@ function panelElemento() {
             hs.forEach(desvincular); render(); panelElemento(); commit();
           }));
         }
-      } else {
+      } else if (e.tipo !== 'tabla') {
         const rects = doc.elementos.filter((r) => r.tipo === 'rectangulo');
         if (rects.length || e.padre) {
           panel.appendChild(fila(campo('Contenedor', 'select', e.padre || '', (v) => {
@@ -1239,7 +1374,9 @@ function panelElemento() {
         }
       }
       if (e.tipo === 'texto') {
-        panel.appendChild(fila(campo('Texto (usa {{campo}})', 'textarea', e.texto, (v) => { e.texto = v; })));
+        const gt = campo('Texto (usa {{campo}})', 'textarea', e.texto, (v) => { e.texto = v; });
+        panel.appendChild(fila(gt));
+        panel.appendChild(selectorCampos(gt._inp));
         panel.appendChild(fila(
           campo('Tamaño (pt)', 'number', e.tam, (v) => { e.tam = Math.max(1, v); }),
           campo('Alinear', 'select', e.alinear, (v) => { e.alinear = v; }, [['izquierda', 'Izquierda'], ['centro', 'Centro'], ['derecha', 'Derecha']]),
@@ -1270,6 +1407,28 @@ function panelElemento() {
         panel.appendChild(nota(e.datos
           ? `Imagen dentro del XML en base64 (${e.mime}, ${Math.round(e.datos.length * 3 / 4 / 1024)} KB).`
           : `Sin imagen. Al cargarla se guarda dentro del XML en base64 (máx. ${MAX_IMAGEN / 1024} KB).`));
+      } else if (e.tipo === 'tabla') {
+        const gd = campo('Datos (lista que se repite)', 'text', e.datos || '', (v) => { e.datos = v; ajustarTabla(e); });
+        gd._inp.setAttribute('list', 'dl-listas');
+        panel.appendChild(fila(gd));
+        panel.appendChild(nota(e.datos
+          ? 'Una fila por cada elemento de la lista. En «Campo» va el nombre del campo de cada fila (en el editor se ven 3 filas de ejemplo).'
+          : 'Sin lista: una sola fila. En «Campo» va la ruta completa, p. ej. factura.total.'));
+        panel.appendChild(fila(
+          campo('Tamaño (pt)', 'number', e.tam, (v) => { e.tam = Math.max(1, v); ajustarTabla(e); }),
+          campo('Borde (mm, 0 = sin)', 'number', e.borde, (v) => { e.borde = Math.max(0, v); }),
+        ));
+        panel.appendChild(fila(campo('Relleno de los títulos (#rrggbb)', 'text', e.relleno || '', (v) => { e.relleno = v; })));
+        const l = document.createElement('label');
+        l.className = 'check';
+        const c = document.createElement('input');
+        c.type = 'checkbox'; c.checked = !!e.titulos;
+        c.addEventListener('change', () => { e.titulos = c.checked; ajustarTabla(e); render(); sincronizarGeometria(e); commit(); });
+        l.append(c, 'Mostrar fila de títulos');
+        panel.appendChild(l);
+        panel.appendChild(nota(`Alto automático: ${num(altoFila(e))} mm por fila.`));
+        panel.appendChild(seccion('Columnas de la tabla'));
+        panelColumnas(e.columnas, e.datos ? (LISTAS[e.datos] ? 'dl-campos-' + e.datos : '') : 'dl-campos-todos');
       } else if (e.tipo === 'linea') {
         panel.appendChild(fila(campo('Grosor (mm)', 'number', e.grosor, (v) => { e.grosor = Math.max(0.1, v); })));
       } else if (e.tipo === 'rectangulo') {
@@ -1296,7 +1455,7 @@ function panelElemento() {
 }
 
 // Reordenar columnas arrastrando el asa de dos líneas.
-function iniciarOrden(ev, cont, caja) {
+function iniciarOrden(ev, cont, caja, cols) {
   if (ev.button !== undefined && ev.button !== 0) return;
   ev.preventDefault();
   caja.classList.add('arrastrando');
@@ -1321,7 +1480,9 @@ function iniciarOrden(ev, cont, caja) {
     document.body.classList.remove('ordenando');
     const orden = Array.from(cont.children).map((c) => +c.dataset.i);
     if (orden.some((v, i) => v !== i)) {
-      doc.columnas = orden.map((i) => doc.columnas[i]);
+      const copia = orden.map((i) => cols[i]);
+      cols.splice(0, cols.length, ...copia);
+      if (sel && sel !== 'cuerpo') { const t = porId(sel); if (t) ajustarTabla(t); }
       panelElemento();
       render();
       commit();
@@ -1367,6 +1528,18 @@ $('#f-imagen').addEventListener('change', (ev) => {
 /*  Arranque                                                           */
 /* ------------------------------------------------------------------ */
 function todo() { render(); panelElemento(); }
+
+// Sugerencias para los campos «Datos» y «Campo» (desplegables de escritura libre).
+(function crearListas() {
+  const crear = (id, valores) => {
+    let d = document.getElementById(id);
+    if (!d) { d = document.createElement('datalist'); d.id = id; document.body.appendChild(d); }
+    valores.forEach((v) => { const o = document.createElement('option'); o.value = v; d.appendChild(o); });
+  };
+  crear('dl-listas', Object.keys(LISTAS));
+  crear('dl-campos-todos', TODOS_LOS_CAMPOS);
+  for (const [k, cs] of Object.entries(LISTAS)) crear('dl-campos-' + k, cs);
+})();
 
 /* ------------------------------------------------------------------ */
 /*  Servidor: guardar en SQLite y lista de plantillas                  */

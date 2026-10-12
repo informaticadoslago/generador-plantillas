@@ -37,6 +37,17 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 - **Logo**: «Cargar imagen…» en el panel del elemento guarda la imagen en base64 dentro del XML (y se guarda con la plantilla en el servidor).
 - **Columnas del cuerpo**: se reordenan arrastrando el asa de dos líneas de cada columna en el panel (clic en el cuerpo para verlas).
 
+## Datos del informe
+
+Se usan como `{{grupo.campo}}` en textos y como `campo` en las columnas (el editor los ofrece en desplegables):
+
+- `factura`: `serie`, `numero`, `numero_completo`, `fecha`, `fecha_operacion`, `simplificada`, `forma_pago`, `observaciones`, `base_imponible`, `cuota_iva`, `cuota_recargo`, `porcentaje_retencion`, `cuota_retencion`, `total`
+- `emisor` (ficha de la empresa): `nombre`, `nif`, `direccion`, `codigo_postal`, `municipio`, `provincia`, `pais`, `correo`, `logo`
+- `cliente` (copiados al emitir): `nombre`, `documento`, `direccion`, `codigo_postal`, `municipio`, `poblacion`, `provincia`, `pais`, `codigo`
+- `lineas` (se repite por cada línea; cuerpo): `descripcion`, `cantidad`, `unidad`, `precio`, `porcentaje_descuento`, `importe`, `porcentaje_iva`, `comentario` (sí/no)
+- `impuestos` (se repite por cada tipo de IVA; tabla del pie): `tipo_iva`, `base_imponible`, `porcentaje_iva`, `cuota_iva`, `porcentaje_recargo`, `cuota_recargo`
+- `programa`: `nombre`, `version`
+
 ## Decisiones tomadas
 
 - Página definida primero: `formato` (A4 por defecto), `orientacion` (vertical/horizontal), márgenes. Equivale a `@page { size: A4 portrait; margin: ... }`.
@@ -73,12 +84,13 @@ Si se abre `public/index.html` directamente en el navegador (sin servidor), el e
 - `giro` (opcional, en cualquier elemento): grados en sentido horario alrededor del **centro** de la caja. `x`, `y`, `ancho`, `alto` describen la caja **sin girar**; el renderizado equivale a CSS `transform: rotate(Xdeg)` con origen en el centro. 90° = el texto se lee de arriba abajo; 270° = de abajo arriba. En el editor el elemento no puede salir de la página por arriba ni por la izquierda.
 - `texto` admite además `borde` (grosor en mm, 0 o ausente = sin borde) y `relleno` (`#rrggbb`).
 - **Contenedor**: un `<rectangulo>` puede llevar dentro `<texto>`, `<logo>` y `<linea>` (un solo nivel). Sus `x`, `y` (y el `giro` propio) son **relativos a la esquina superior izquierda del rectángulo sin girar**; el giro del rectángulo se aplica a todo el contenido (en CSS, los hijos van dentro del `div` girado). En el editor cada elemento tiene `padre` (id del rectángulo). Con un rectángulo seleccionado, «+ Texto/Logo/Línea» añaden dentro. El selector «Contenedor» y el botón «Desvincular» del panel sacan o meten un elemento sin que cambie su posición ni su aspecto en la página (se recalculan x, y y giro). Borrar el rectángulo deja su contenido suelto; duplicarlo copia también el contenido.
+- **Tabla libre** (`<tabla>`, en cabecera o pie; distinta de la del cuerpo): `x`, `y`, `ancho`, `giro`, `tam` (pt), `datos` (lista que se repite, p. ej. `impuestos`; vacío = una sola fila y `campo` es una ruta completa como `factura.total`), `titulos` (fila de títulos, `true` por defecto), `borde` (mm) y `relleno` (color de los títulos). Lleva hijos `<columna campo titulo ancho alinear formato/>` como el cuerpo (`ancho` en % del ancho de la tabla). **No lleva `alto`**: la altura sale de las filas (cada fila mide `tam·0,3528·1,3 + 1,6` mm, una sola línea por celda); el editor enseña 3 filas de ejemplo. No puede ir dentro de un rectángulo.
 - **Marca de agua**: `<marca giro="315" opacidad="0.08">` es hija directa de `<plantilla>` (justo después de `<pagina>`), como máximo una. Ocupa toda la página, va detrás de todo y centra su contenido, que es un `<texto tam color negrita>` o un `<logo nombre tipo ancho>` con la imagen en base64 (el alto sale de la proporción). `opacidad` va de 0 a 1.
 - `x`, `y` van en mm **desde la esquina superior izquierda de la página** (provisional, ver decisiones abiertas).
 - `cabecera/@altura`: mm desde el borde superior. `pie/@altura`: mm desde el borde inferior. El cuerpo ocupa el espacio entre ambos.
 - **La imagen del logo va dentro del XML, en base64**, como contenido del elemento `<logo>`; `tipo` es el tipo MIME (PNG, JPEG, GIF, WebP o SVG) y `nombre` el nombre del archivo original. Sin imagen, `<logo>` va vacío y solo lleva `nombre`. El editor admite hasta 500 KB por imagen y la API hasta 5 MB de XML; ambos validan el tipo y el base64. Los XML antiguos con `src` se leen como `nombre`.
 - `columna/@ancho` es un porcentaje del ancho útil; deben sumar 100. El orden de los elementos `<columna>` es el orden de las columnas en la tabla.
-- Elementos admitidos en cabecera y pie: `logo`, `texto`, `linea`, `rectangulo`. El editor decide la banda de cada elemento según su posición vertical.
+- Elementos admitidos en cabecera y pie: `logo`, `texto`, `linea`, `rectangulo`, `tabla`. El editor decide la banda de cada elemento según su posición vertical.
 
 ## Decisiones abiertas
 

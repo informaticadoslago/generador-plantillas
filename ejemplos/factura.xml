@@ -7,25 +7,34 @@
     <logo nombre="logo.png" x="15" y="10" ancho="40" alto="20"/>
     <texto x="65" y="10" ancho="70" alto="20" tam="10" negrita="false" alinear="izquierda">{{emisor.nombre}}
 {{emisor.nif}}
-{{emisor.direccion}}</texto>
-    <texto x="140" y="10" ancho="55" alto="14" tam="11" negrita="true" alinear="derecha">Factura nº {{numero}}
-Fecha: {{fecha}}</texto>
+{{emisor.direccion}}
+{{emisor.municipio}}</texto>
+    <texto x="115" y="10" ancho="80" alto="14" tam="11" negrita="true" alinear="derecha">Factura {{factura.numero_completo}}
+Fecha: {{factura.fecha}}</texto>
     <texto x="110" y="35" ancho="85" alto="25" tam="10" negrita="false" alinear="izquierda">{{cliente.nombre}}
-{{cliente.nif}}
-{{cliente.direccion}}</texto>
+{{cliente.documento}}
+{{cliente.direccion}}
+{{cliente.municipio}}</texto>
     <linea x="15" y="66" largo="180" grosor="0.3"/>
   </cabecera>
   <cuerpo datos="lineas">
-    <columna campo="concepto" titulo="Concepto" ancho="46" alinear="izquierda" formato=""/>
-    <columna campo="cantidad" titulo="Cant." ancho="10" alinear="derecha" formato=""/>
+    <columna campo="descripcion" titulo="Descripción" ancho="44" alinear="izquierda" formato=""/>
+    <columna campo="cantidad" titulo="Cant." ancho="9" alinear="derecha" formato=""/>
     <columna campo="precio" titulo="Precio" ancho="14" alinear="derecha" formato="moneda"/>
-    <columna campo="iva" titulo="IVA %" ancho="12" alinear="derecha" formato=""/>
-    <columna campo="importe" titulo="Importe" ancho="18" alinear="derecha" formato="moneda"/>
+    <columna campo="porcentaje_descuento" titulo="Dto. %" ancho="9" alinear="derecha" formato=""/>
+    <columna campo="porcentaje_iva" titulo="IVA %" ancho="10" alinear="derecha" formato=""/>
+    <columna campo="importe" titulo="Importe" ancho="14" alinear="derecha" formato="moneda"/>
   </cuerpo>
   <pie altura="55">
-    <texto x="120" y="245" ancho="75" alto="20" tam="11" negrita="true" alinear="derecha">Base imponible: {{totales.base}}
-IVA: {{totales.iva}}
-TOTAL: {{totales.total}}</texto>
-    <texto x="15" y="268" ancho="180" alto="9" tam="8" negrita="false" alinear="izquierda">Forma de pago: {{formaPago}}. {{textoLegal}}</texto>
+    <tabla x="15" y="246" ancho="100" tam="8" datos="impuestos" titulos="true" borde="0.2" relleno="#e2e8f0">
+      <columna campo="base_imponible" titulo="Base" ancho="30" alinear="derecha" formato="moneda"/>
+      <columna campo="porcentaje_iva" titulo="% IVA" ancho="20" alinear="derecha" formato=""/>
+      <columna campo="cuota_iva" titulo="Cuota IVA" ancho="30" alinear="derecha" formato="moneda"/>
+      <columna campo="cuota_recargo" titulo="Recargo" ancho="20" alinear="derecha" formato="moneda"/>
+    </tabla>
+    <texto x="120" y="245" ancho="75" alto="20" tam="10" negrita="true" alinear="derecha">Base: {{factura.base_imponible}}
+IVA: {{factura.cuota_iva}}
+TOTAL: {{factura.total}}</texto>
+    <texto x="15" y="268" ancho="180" alto="9" tam="8" negrita="false" alinear="izquierda">Forma de pago: {{factura.forma_pago}}. {{factura.observaciones}}</texto>
   </pie>
 </plantilla>
