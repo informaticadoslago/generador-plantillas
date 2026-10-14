@@ -1,2 +1,5 @@
 # Base de datos local de plantillas
 /datos/
+
+# Exportaciones de conversaciones de la extensión Claude Code Exporter
+/.cc-history/
