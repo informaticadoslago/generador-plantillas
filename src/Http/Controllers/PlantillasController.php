@@ -1,0 +1,197 @@
+<?php
+
+namespace InformaticadosLago\GeneradorPlantillas\Http\Controllers;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use InformaticadosLago\GeneradorPlantillas\GeneradorPlantillas;
+use InformaticadosLago\GeneradorPlantillas\Models\Plantilla;
+use InformaticadosLago\GeneradorPlantillas\Support\ValidadorPlantilla;
+
+/**
+ * API del editor, con el mismo contrato que api/index.php (modo suelto): mismas
+ * respuestas y mismos códigos (409 con codigo «existe» o «version»). Todo va
+ * filtrado por el plantillable de la petición (GeneradorPlantillas).
+ */
+class PlantillasController extends Controller
+{
+    public function __construct(private ValidadorPlantilla $validador) {}
+
+    public function lista(Request $request): JsonResponse
+    {
+        $plantillas = Plantilla::de($this->plantillable($request))
+            ->orderBy('nombre')
+            ->get(['nombre', 'version', 'actualizada'])
+            ->map(fn (Plantilla $p) => [
+                'nombre'      => $p->nombre,
+                'version'     => $p->version,
+                'actualizada' => $this->fecha($p->actualizada),
+            ]);
+
+        return response()->json(['plantillas' => $plantillas]);
+    }
+
+    public function ver(Request $request, string $nombre): JsonResponse
+    {
+        $plantilla = $this->buscar($request, $nombre);
+        if (! $plantilla instanceof Plantilla) {
+            return $plantilla;
+        }
+
+        return response()->json([
+            'nombre'      => $plantilla->nombre,
+            'xml'         => $plantilla->xml,
+            'version'     => $plantilla->version,
+            'creada'      => $this->fecha($plantilla->creada),
+            'actualizada' => $this->fecha($plantilla->actualizada),
+        ]);
+    }
+
+    public function xml(Request $request, string $nombre): Response|JsonResponse
+    {
+        $plantilla = $this->buscar($request, $nombre);
+        if (! $plantilla instanceof Plantilla) {
+            return $plantilla;
+        }
+        $fichero = preg_replace('/[^\w.\-]+/u', '_', $plantilla->nombre) . '.xml';
+
+        return response($plantilla->xml, 200, [
+            'Content-Type'        => 'application/xml; charset=utf-8',
+            'Content-Disposition' => 'attachment; filename="' . $fichero . '"',
+        ]);
+    }
+
+    /**
+     * Guarda {xml, version}: version es la que tenía el cliente (0 si es nueva).
+     * Si no coincide con la guardada, 409 y no se toca nada.
+     */
+    public function guardar(Request $request, string $nombre): JsonResponse
+    {
+        if ($error = $this->validador->nombre($nombre)) {
+            return $this->fallo(422, $error);
+        }
+        if (! $request->isJson()) {
+            return $this->fallo(415, 'El cuerpo debe enviarse como application/json.');
+        }
+        $xml     = (string) $request->json('xml', '');
+        $version = (int) $request->json('version', 0);
+        if ($error = $this->validador->xml($xml, $nombre)) {
+            return $this->fallo(422, $error);
+        }
+        $plantillable = $this->plantillable($request);
+
+        return DB::transaction(function () use ($plantillable, $nombre, $xml, $version) {
+            $plantilla = Plantilla::de($plantillable)->llamada($nombre)->lockForUpdate()->first();
+
+            if ($plantilla === null) {
+                $plantilla = $this->crear($plantillable, $nombre, $xml);
+
+                return $this->respuestaGuardada($plantilla, 201);
+            }
+
+            if ($version !== $plantilla->version) {
+                return $version === 0
+                    ? $this->fallo(409, 'Ya existe una plantilla con ese nombre.', ['codigo' => 'existe', 'version_actual' => $plantilla->version])
+                    : $this->fallo(409, "La plantilla ha cambiado en el servidor (versión {$plantilla->version}). Ábrela de nuevo antes de guardar.", ['codigo' => 'version', 'version_actual' => $plantilla->version]);
+            }
+
+            $plantilla->nombre  = $nombre;
+            $plantilla->xml     = $xml;
+            $plantilla->version = $plantilla->version + 1;
+            $plantilla->save();
+
+            return $this->respuestaGuardada($plantilla, 200);
+        });
+    }
+
+    /** Copia lo guardado con otro nombre {nombre}, en el mismo plantillable. */
+    public function duplicar(Request $request, string $nombre): JsonResponse
+    {
+        if ($error = $this->validador->nombre($nombre)) {
+            return $this->fallo(422, $error);
+        }
+        if (! $request->isJson()) {
+            return $this->fallo(415, 'El cuerpo debe enviarse como application/json.');
+        }
+        $nuevo = trim((string) $request->json('nombre', ''));
+        if ($error = $this->validador->nombre($nuevo)) {
+            return $this->fallo(422, $error);
+        }
+        $plantillable = $this->plantillable($request);
+
+        return DB::transaction(function () use ($plantillable, $nombre, $nuevo) {
+            $original = Plantilla::de($plantillable)->llamada($nombre)->first();
+            if ($original === null) {
+                return $this->fallo(404, 'La plantilla no existe.');
+            }
+            if (Plantilla::de($plantillable)->llamada($nuevo)->lockForUpdate()->exists()) {
+                return $this->fallo(409, 'Ya existe una plantilla con ese nombre.', ['codigo' => 'existe']);
+            }
+            $copia = $this->crear($plantillable, $nuevo, $this->validador->renombrar($original->xml, $nuevo));
+
+            return $this->respuestaGuardada($copia, 201);
+        });
+    }
+
+    public function borrar(Request $request, string $nombre): JsonResponse
+    {
+        $plantilla = $this->buscar($request, $nombre);
+        if (! $plantilla instanceof Plantilla) {
+            return $plantilla;
+        }
+        $plantilla->delete();
+
+        return response()->json(['borrada' => $nombre]);
+    }
+
+    private function plantillable(Request $request): ?Model
+    {
+        return GeneradorPlantillas::plantillable($request);
+    }
+
+    /** La plantilla del plantillable de la petición, o la respuesta de error (422 o 404). */
+    private function buscar(Request $request, string $nombre): Plantilla|JsonResponse
+    {
+        if ($error = $this->validador->nombre($nombre)) {
+            return $this->fallo(422, $error);
+        }
+
+        return Plantilla::de($this->plantillable($request))->llamada($nombre)->first()
+            ?? $this->fallo(404, 'La plantilla no existe.');
+    }
+
+    private function crear(?Model $plantillable, string $nombre, string $xml): Plantilla
+    {
+        $plantilla = new Plantilla(['nombre' => $nombre, 'xml' => $xml, 'version' => 1]);
+        if ($plantillable !== null) {
+            $plantilla->plantillable()->associate($plantillable);
+        }
+        $plantilla->save();
+
+        return $plantilla;
+    }
+
+    private function respuestaGuardada(Plantilla $plantilla, int $codigo): JsonResponse
+    {
+        return response()->json([
+            'nombre'      => $plantilla->nombre,
+            'version'     => $plantilla->version,
+            'actualizada' => $this->fecha($plantilla->actualizada),
+        ], $codigo);
+    }
+
+    private function fallo(int $codigo, string $mensaje, array $extra = []): JsonResponse
+    {
+        return response()->json(['error' => $mensaje] + $extra, $codigo);
+    }
+
+    private function fecha(?Carbon $fecha): ?string
+    {
+        return $fecha?->toIso8601String();
+    }
+}

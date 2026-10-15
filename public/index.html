@@ -10,18 +10,22 @@
     --suave: #6b7280; --acento: #2563eb; --aviso: #b45309; --error: #b91c1c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body {
     font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     color: var(--texto); background: var(--bg);
-    display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 1fr 330px;
-    grid-template-areas: "barra barra" "lienzo panel" "estado panel";
+    display: grid; grid-template-rows: 1fr auto; grid-template-columns: 170px 1fr 330px;
+    grid-template-areas: "barra lienzo panel" "barra estado panel";
   }
+  /* Botones del editor, en columna a la izquierda */
   #barra {
-    grid-area: barra; background: var(--panel); border-bottom: 1px solid var(--linea);
-    padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    grid-area: barra; background: var(--panel); border-right: 1px solid var(--linea);
+    padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: auto;
   }
-  #barra .sep { width: 1px; height: 22px; background: var(--linea); margin: 0 4px; }
+  #barra > button, #barra > a.boton { text-align: left; }
+  #barra .sep { height: 1px; background: var(--linea); margin: 4px 0; flex: none; }
+  #barra label { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
   button, select, input, textarea { font: inherit; color: inherit; }
   button {
     background: #fff; border: 1px solid var(--linea); border-radius: 6px;
@@ -180,6 +184,8 @@
 <body>
 
 <div id="barra">
+  <a id="b-volver" class="boton" hidden>← Volver</a>
+  <span id="sep-volver" class="sep" hidden></span>
   <button id="b-plantillas" title="Plantillas guardadas en el servidor">Plantillas</button>
   <button id="b-guardar" class="principal" title="Guardar en el servidor (Ctrl+S)">Guardar</button>
   <button id="b-guardar-como" title="Guardar con otro nombre (Ctrl+Mayús+S)">Guardar como…</button>
@@ -267,9 +273,12 @@
 const MM = 96 / 25.4;               // píxeles de pantalla por mm (zoom 1)
 const PT = 25.4 / 72;               // mm por punto tipográfico
 const FORMATOS = { A3: [297, 420], A4: [210, 297], A5: [148, 210] };
-const CLAVE_LS = 'editor-plantillas:sesion';
+// Configuración que pone el paquete de Laravel al servir el editor; sin ella (modo suelto), lo de siempre.
+const CONFIG = window.GeneradorPlantillas || {};
+const CLAVE_LS = CONFIG.claveLocal || 'editor-plantillas:sesion';
+const API = CONFIG.api || 'api/';
 
-let servidor = false;               // true si la API responde (php -S ... router.php)
+let servidor = false;               // true si la API responde (paquete de Laravel o php -S ... router.php)
 let origen = null;                  // {nombre, version} de la plantilla del servidor que se edita
 let guardadoXml = '';               // XML tal como se abrió o guardó por última vez
 let uid = 1;
@@ -288,15 +297,15 @@ const panel = $('#panel');
 
 function nuevoId() { return 'e' + (uid++); }
 
-/* Datos que recibe el informe (el generador de facturas los rellena). */
-const CAMPOS = {                    // se usan como {{grupo.campo}}
+/* Datos que recibe el informe (el generador de facturas los rellena). El programa puede dar los suyos. */
+const CAMPOS = CONFIG.campos || {   // se usan como {{grupo.campo}}
   factura: ['serie', 'numero', 'numero_completo', 'fecha', 'fecha_operacion', 'simplificada', 'forma_pago', 'observaciones',
     'base_imponible', 'cuota_iva', 'cuota_recargo', 'porcentaje_retencion', 'cuota_retencion', 'total'],
   emisor: ['nombre', 'nif', 'direccion', 'codigo_postal', 'municipio', 'provincia', 'pais', 'correo', 'logo'],
   cliente: ['nombre', 'documento', 'direccion', 'codigo_postal', 'municipio', 'poblacion', 'provincia', 'pais', 'codigo'],
   programa: ['nombre', 'version'],
 };
-const LISTAS = {                    // listas que se repiten (cuerpo o tabla con datos="...")
+const LISTAS = CONFIG.listas || {   // listas que se repiten (cuerpo o tabla con datos="...")
   lineas: ['descripcion', 'cantidad', 'unidad', 'precio', 'porcentaje_descuento', 'importe', 'porcentaje_iva', 'comentario'],
   impuestos: ['tipo_iva', 'base_imponible', 'porcentaje_iva', 'cuota_iva', 'porcentaje_recargo', 'cuota_recargo'],
 };
@@ -1588,7 +1597,7 @@ function todo() { render(); panelElemento(); }
 /* ------------------------------------------------------------------ */
 /*  Vista previa con datos de prueba                                   */
 /* ------------------------------------------------------------------ */
-const DATOS_PRUEBA = {
+const DATOS_PRUEBA = CONFIG.datosPrueba || {
   factura: {
     serie: 'A', numero: 128, numero_completo: 'A-2026-0128', fecha: '2026-10-12', fecha_operacion: '2026-10-10',
     simplificada: false, forma_pago: 'Transferencia a 30 días', observaciones: 'Gracias por su confianza.',
@@ -1838,19 +1847,21 @@ $('#previa-muchas').addEventListener('click', () => {
 })();
 
 /* ------------------------------------------------------------------ */
-/*  Servidor: guardar en SQLite y lista de plantillas                  */
+/*  Servidor: guardar y lista de plantillas (Laravel o api/index.php)  */
 /* ------------------------------------------------------------------ */
 async function api(metodo, ruta, cuerpo) {
-  const opc = { method: metodo, headers: {} };
+  const opc = { method: metodo, headers: { Accept: 'application/json' } };
+  if (CONFIG.csrf) opc.headers['X-CSRF-TOKEN'] = CONFIG.csrf;   // Laravel lo exige en PUT, POST y DELETE
   if (cuerpo !== undefined) {
     opc.headers['Content-Type'] = 'application/json';
     opc.body = JSON.stringify(cuerpo);
   }
-  const r = await fetch('api/' + ruta, opc);
+  const r = await fetch(API + ruta, opc);
   let datos = null;
   try { datos = await r.json(); } catch (e) { /* sin cuerpo JSON */ }
   if (!r.ok) {
-    const err = new Error((datos && datos.error) || ('Error ' + r.status));
+    // error: nuestra API; message: errores propios de Laravel (sesión caducada, sin permiso…)
+    const err = new Error((datos && (datos.error || datos.message)) || ('Error ' + r.status));
     err.estado = r.status;
     err.datos = datos;
     throw err;
@@ -1988,7 +1999,7 @@ function pintarLista() {
     xml.className = 'boton';
     xml.textContent = 'XML';
     xml.title = 'Descargar el XML guardado en el servidor';
-    xml.href = 'api/' + urlPlantilla(p.nombre) + '/xml';
+    xml.href = API + urlPlantilla(p.nombre) + '/xml';
     xml.setAttribute('download', '');
     tdAcc.append(
       boton('Abrir', () => abrirPlantilla(p.nombre), 'principal'),
@@ -2010,7 +2021,8 @@ async function abrirPlantilla(nombre) {
     $('#lista').close();
     mensaje(`Abierta «${r.nombre}» (versión ${r.version}).`);
   } catch (err) {
-    msgLista(err.message, true);
+    // Abierta al arrancar (?plantilla=…), la lista no está a la vista.
+    if ($('#lista').open) msgLista(err.message, true); else mensaje(err.message, true);
   }
 }
 async function duplicarPlantilla(nombre) {
@@ -2052,9 +2064,19 @@ $('#l-ejemplo').addEventListener('click', () => { if (ejemplo()) $('#lista').clo
       guardadoXml = typeof s.guardado === 'string' ? s.guardado : '';
     }
   } catch (e) { /* sesión inválida o sin almacenamiento: se usa el ejemplo */ }
+  if (CONFIG.volver) {
+    $('#b-volver').href = CONFIG.volver;
+    $('#b-volver').hidden = $('#sep-volver').hidden = false;
+  }
   todo();
   commit();
-  detectarServidor();
+  detectarServidor().then(() => {
+    // Desde la lista del programa: ?plantilla=nombre abre esa; ?nueva, una vacía.
+    if (CONFIG.abrir) abrirPlantilla(CONFIG.abrir);
+    else if (CONFIG.nueva) nueva();
+    // Sin los parámetros, recargar la página no la vuelve a abrir.
+    if (CONFIG.abrir || CONFIG.nueva) history.replaceState(null, '', location.pathname);
+  });
 })();
 
 // Pequeña API para pruebas desde la consola o desde scripts.

@@ -3,3 +3,8 @@
 
 # Exportaciones de conversaciones de la extensión Claude Code Exporter
 /.cc-history/
+
+# Paquete de Composer (como laravel-translations)
+/vendor/
+composer.lock
+.phpunit.cache/
