@@ -1247,7 +1247,10 @@ function selectorCampos(ta) {
 function panelPlantilla(destino) {
   const m = doc.margen;
   destino.appendChild(seccion('Plantilla'));
-  destino.appendChild(fila(campo('Nombre', 'text', doc.nombre, (v) => { doc.nombre = v; })));
+  const nombre = campo('Nombre', 'text', doc.nombre, (v) => { doc.nombre = v; });
+  // Solo modificar: cambiar el nombre sería crear otra plantilla.
+  if (CONFIG.soloModificar) nombre.querySelector('input').disabled = true;
+  destino.appendChild(fila(nombre));
   destino.appendChild(fila(
     campo('Formato', 'select', doc.formato, (v) => { doc.formato = v; }, Object.keys(FORMATOS).map((k) => [k, k])),
     campo('Orientación', 'select', doc.orientacion, (v) => { doc.orientacion = v; }, [['vertical', 'Vertical'], ['horizontal', 'Horizontal']]),
@@ -1925,6 +1928,7 @@ async function guardar() {
 
 // Guardar como: guarda lo que hay en pantalla con otro nombre y sigue editando esa copia.
 async function guardarComo() {
+  if (CONFIG.soloModificar) return;
   if (!servidor) { mensaje('No hay servidor: usa «Exportar XML».', true); return; }
   const anterior = doc.nombre;
   const n = prompt('Guardar como (nombre de la nueva plantilla):', esOrigen(anterior) ? anterior + ' copia' : anterior);
@@ -2004,8 +2008,10 @@ function pintarLista() {
     tdAcc.append(
       boton('Abrir', () => abrirPlantilla(p.nombre), 'principal'),
       xml,
-      boton('Duplicar', () => duplicarPlantilla(p.nombre)),
-      boton('Borrar', () => borrarPlantilla(p.nombre), 'peligro'),
+      ...(CONFIG.soloModificar ? [] : [
+        boton('Duplicar', () => duplicarPlantilla(p.nombre)),
+        boton('Borrar', () => borrarPlantilla(p.nombre), 'peligro'),
+      ]),
     );
     tr.append(tdNombre, tdVersion, tdFecha, tdAcc);
     cuerpo.appendChild(tr);
@@ -2067,6 +2073,10 @@ $('#l-ejemplo').addEventListener('click', () => { if (ejemplo()) $('#lista').clo
   if (CONFIG.volver) {
     $('#b-volver').href = CONFIG.volver;
     $('#b-volver').hidden = $('#sep-volver').hidden = false;
+  }
+  // Solo modificar las que ya hay: nada que cree plantillas nuevas.
+  if (CONFIG.soloModificar) {
+    ['#b-guardar-como', '#b-nueva', '#b-ejemplo', '#l-nueva', '#l-ejemplo'].forEach((s) => { $(s).hidden = true; });
   }
   todo();
   commit();

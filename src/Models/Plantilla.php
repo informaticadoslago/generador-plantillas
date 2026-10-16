@@ -27,21 +27,10 @@ class Plantilla extends Model
     {
         static::saved(function (Plantilla $plantilla) {
             $anterior = $plantilla->wasChanged('nombre') ? $plantilla->ficheroBlade($plantilla->getOriginal('nombre')) : null;
-            $fichero  = $plantilla->ficheroBlade();
-            if ($fichero === null) {
-                return;
-            }
-            if ($anterior !== null && $anterior !== $fichero && is_file($anterior)) {
+            if ($anterior !== null && $anterior !== $plantilla->ficheroBlade() && is_file($anterior)) {
                 unlink($anterior);
             }
-
-            $carpeta = dirname($fichero);
-            if (! is_dir($carpeta) && ! mkdir($carpeta, 0775, true) && ! is_dir($carpeta)) {
-                throw new RuntimeException("No se puede crear la carpeta de las Blades: {$carpeta}");
-            }
-            if (file_put_contents($fichero, app(GeneradorBlade::class)->blade($plantilla->xml), LOCK_EX) === false) {
-                throw new RuntimeException("No se puede escribir la Blade de la plantilla: {$fichero}");
-            }
+            $plantilla->escribirBlade();
         });
 
         static::deleted(function (Plantilla $plantilla) {
@@ -50,6 +39,23 @@ class Plantilla extends Model
                 unlink($fichero);
             }
         });
+    }
+
+    /** Escribe su Blade, pisando la que hubiera (si el programa da carpeta). */
+    public function escribirBlade(): void
+    {
+        $fichero = $this->ficheroBlade();
+        if ($fichero === null) {
+            return;
+        }
+
+        $carpeta = dirname($fichero);
+        if (! is_dir($carpeta) && ! mkdir($carpeta, 0775, true) && ! is_dir($carpeta)) {
+            throw new RuntimeException("No se puede crear la carpeta de las Blades: {$carpeta}");
+        }
+        if (file_put_contents($fichero, app(GeneradorBlade::class)->blade($this->xml), LOCK_EX) === false) {
+            throw new RuntimeException("No se puede escribir la Blade de la plantilla: {$fichero}");
+        }
     }
 
     /** El fichero de su Blade (con otro nombre, el que tendría); null si no se escriben. */

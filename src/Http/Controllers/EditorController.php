@@ -13,23 +13,36 @@ use InformaticadosLago\GeneradorPlantillas\GeneradorPlantillas;
  * borrador, el botón «Volver» y, si el programa los da, campos, listas y datos
  * de prueba. No es una vista Blade porque el editor lleva {{campo}} en sus textos.
  *
- * ?plantilla=nombre abre esa plantilla al arrancar; ?nueva, una vacía.
+ * ?plantilla=nombre abre esa plantilla al arrancar; ?nueva, una vacía. Sirve
+ * a las dos rutas: las plantillas del dueño (si config crear es false, solo
+ * modificar) y las globales.
  */
 class EditorController extends Controller
 {
     public function __invoke(Request $request): Response
     {
-        $plantillable = GeneradorPlantillas::plantillable($request);
-        $abrir        = trim((string) $request->query('plantilla', ''));
-        $volver       = config('generador-plantillas.volver');
+        $globales = GeneradorPlantillas::sonGlobales($request);
+        $abrir    = trim((string) $request->query('plantilla', ''));
+        $crear    = $globales || config('generador-plantillas.crear', true);
+        if ($globales) {
+            $prefijo = config('generador-plantillas.globales.prefijo');
+            $volver  = config('generador-plantillas.globales.volver');
+            $clave   = 'globales';
+        } else {
+            $plantillable = GeneradorPlantillas::plantillable($request);
+            $prefijo      = config('generador-plantillas.rutas.prefijo');
+            $volver       = config('generador-plantillas.volver');
+            $clave        = $plantillable ? $plantillable->getMorphClass() . ':' . $plantillable->getKey() : 'comunes';
+        }
 
         $config = array_filter([
-            'api'         => rtrim(url(config('generador-plantillas.rutas.prefijo') . '/api'), '/') . '/',
-            'csrf'        => csrf_token(),
-            'claveLocal'  => 'editor-plantillas:' . ($plantillable ? $plantillable->getMorphClass() . ':' . $plantillable->getKey() : 'comunes'),
-            'abrir'       => $abrir !== '' ? $abrir : null,
-            'nueva'       => $abrir === '' && $request->query->has('nueva') ? true : null,
-            'volver'      => $volver ? url($volver) : null,
+            'api'           => rtrim(url($prefijo . '/api'), '/') . '/',
+            'csrf'          => csrf_token(),
+            'claveLocal'    => 'editor-plantillas:' . $clave,
+            'abrir'         => $abrir !== '' ? $abrir : null,
+            'nueva'         => $crear && $abrir === '' && $request->query->has('nueva') ? true : null,
+            'soloModificar' => $crear ? null : true,
+            'volver'        => $volver ? url($volver) : null,
             'campos'      => config('generador-plantillas.campos'),
             'listas'      => config('generador-plantillas.listas'),
             'datosPrueba' => config('generador-plantillas.datos_prueba'),

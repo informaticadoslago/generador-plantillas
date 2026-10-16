@@ -10,7 +10,8 @@ use InvalidArgumentException;
  * Pasa el XML de una plantilla (versión 1) a una vista Blade para Dompdf. La
  * vista recibe los datos en $datos, un array por grupos: {{grupo.campo}} en los
  * textos y, en las tablas, el campo de cada columna dentro de cada elemento de
- * su lista. Todo va en mm desde la esquina superior izquierda de la página.
+ * su lista. Si recibe $marcaAgua (un texto), lo pone en grande y en diagonal en
+ * cada hoja (un borrador: EN PREPARACIÓN). Todo va en mm desde la esquina superior izquierda de la página.
  * Cabecera y pie se repiten en cada hoja; el cuerpo (una fila por elemento de
  * su lista) corre entre los dos. Una tabla libre con la lista vacía no sale.
  *
@@ -97,7 +98,8 @@ class GeneradorBlade
 
         $nombre = preg_replace('/[^\p{L}\p{N} _.\-]/u', '', $raiz->getAttribute('nombre'));
         $blade  = '{{-- Plantilla «' . $nombre . '» del generador de plantillas. '
-            . "No se toca a mano: se escribe de nuevo cada vez que se guarda la plantilla. Recibe los datos en \$datos. --}}\n"
+            . "No se toca a mano: se escribe de nuevo cada vez que se guarda la plantilla. Recibe los datos en \$datos "
+            . "y, si hace falta, una marca de agua en \$marcaAgua (p. ej. EN PREPARACIÓN). --}}\n"
             . "@use('InformaticadosLago\\GeneradorPlantillas\\Support\\Formato')\n"
             . '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><style>'
             . '@page { size: ' . $this->mm($ancho) . ' ' . $this->mm($alto) . '; margin: ' . $this->mm($altoCab) . ' '
@@ -116,6 +118,12 @@ class GeneradorBlade
         if ($marca = $this->hijo($raiz, 'marca')) {
             $blade .= '<div class="capa" style="' . $fijo(-$altoCab, $alto) . '">' . $this->marca($marca, $ancho, $alto) . "</div>\n";
         }
+        // La marca de agua que pone el programa al imprimir (p. ej. EN PREPARACIÓN), encima de la de la plantilla.
+        $blade .= "@if (! empty(\$marcaAgua))\n"
+            . '<div class="capa" style="' . $fijo(-$altoCab, $alto) . '"><div class="el" style="left: 0; top: ' . $this->mm($alto / 2 - 15)
+            . '; width: ' . $this->mm($ancho) . '; text-align: center; opacity: 0.15; transform: rotate(315deg);">'
+            . '<div style="font-size: 60pt; font-weight: bold; line-height: 1; white-space: nowrap; color: #b91c1c;">{{ $marcaAgua }}</div>'
+            . "</div></div>\n@endif\n";
         if ($cabecera) {
             $blade .= '<div class="capa" style="' . $fijo(-$altoCab, $altoCab) . '">' . $this->elementos($cabecera, 0) . "</div>\n";
         }

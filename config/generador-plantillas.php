@@ -33,6 +33,29 @@ return [
     'volver' => null,
 
     /*
+     * Si en las plantillas del dueño se pueden crear, duplicar y borrar. false
+     * = solo se modifican las que ya tiene (las copias de las globales): la API
+     * responde 403 y el editor esconde esos botones.
+     */
+    'crear' => true,
+
+    /*
+     * Plantillas globales del programa: un XML por plantilla en una carpeta
+     * que va al repositorio (sin Blade). Se crean y se modifican con su propio
+     * editor, en {prefijo}, con las mismas rutas de arriba, y
+     * GeneradorPlantillas::copiarGlobales() las copia a un dueño. null o sin
+     * carpeta = no hay globales.
+     *
+     *   'globales' => [
+     *       'carpeta'    => resource_path('plantillas'),
+     *       'prefijo'    => 'generador-plantillas/globales',
+     *       'middleware' => ['web', 'auth', 'can:menu-maestros'],
+     *       'volver'     => 'plantillas',
+     *   ],
+     */
+    'globales' => null,
+
+    /*
      * Carpeta donde se escribe la Blade de cada plantilla al guardarla (pisa la
      * anterior; al borrar la plantilla, se borra). Se llama como la plantilla y
      * el id de su dueño: recibo-alquiler-5.blade.php. El programa la usa con

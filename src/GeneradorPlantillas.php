@@ -6,6 +6,9 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use InformaticadosLago\GeneradorPlantillas\Almacenes\Almacen;
+use InformaticadosLago\GeneradorPlantillas\Almacenes\AlmacenBaseDatos;
+use InformaticadosLago\GeneradorPlantillas\Almacenes\AlmacenFicheros;
 
 /**
  * Lo que el programa le dice al paquete. Se llama en el boot() de un
@@ -35,6 +38,47 @@ final class GeneradorPlantillas
     public static function plantillable(Request $request): ?Model
     {
         return self::$plantillable ? (self::$plantillable)($request) : null;
+    }
+
+    /** Si la petición va por las rutas de las plantillas globales (generador-plantillas.globales.*). */
+    public static function sonGlobales(Request $request): bool
+    {
+        return str_starts_with((string) $request->route()?->getName(), 'generador-plantillas.globales.');
+    }
+
+    /** Dónde están las plantillas con las que trabaja la petición: las globales o las de su plantillable. */
+    public static function almacen(Request $request): Almacen
+    {
+        return self::sonGlobales($request) ? self::globales() : new AlmacenBaseDatos(self::plantillable($request));
+    }
+
+    /** Las plantillas globales (config globales.carpeta); null si el programa no las tiene. */
+    public static function globales(): ?AlmacenFicheros
+    {
+        $carpeta = config('generador-plantillas.globales.carpeta');
+
+        return $carpeta ? new AlmacenFicheros(rtrim($carpeta, '/')) : null;
+    }
+
+    /**
+     * Copia al dueño las globales que no tenga (por nombre), como plantillas
+     * suyas: así se escribe su Blade. Las que ya tiene no se tocan. Devuelve
+     * los nombres de las copiadas.
+     */
+    public static function copiarGlobales(Model $plantillable): array
+    {
+        $almacen = new AlmacenBaseDatos($plantillable);
+        $copiadas = [];
+        foreach (self::globales()?->lista() ?? [] as $global) {
+            $almacen->bloqueado(function () use ($almacen, $global, &$copiadas) {
+                if ($almacen->buscar($global['nombre']) === null) {
+                    $almacen->crear($global['nombre'], $global['xml']);
+                    $copiadas[] = $global['nombre'];
+                }
+            });
+        }
+
+        return $copiadas;
     }
 
     /** Carpeta donde se escriben las Blades de las plantillas (config blade); null = no se escriben. */

@@ -152,4 +152,14 @@ class BladeTest extends TestCase
         $this->assertStringContainsString('&lt;b&gt;Ana&lt;/b&gt;<br>' . "\n" . 'Segunda', $html);
         $this->assertStringContainsString('&lt;i&gt;x&lt;/i&gt;', $html);
     }
+
+    public function test_la_marca_de_agua_del_programa_solo_sale_si_la_pasa(): void
+    {
+        $sin = $this->pintar('<cabecera altura="20"/>', []);
+        $this->assertStringNotContainsString('rotate(315deg)', $sin);
+
+        $con = view(GeneradorPlantillas::vista('recibo', null), ['datos' => [], 'marcaAgua' => 'EN PREPARACIÓN <b>'])->render();
+        $this->assertStringContainsString('rotate(315deg)', $con);
+        $this->assertStringContainsString('EN PREPARACIÓN &lt;b&gt;', $con);
+    }
 }
