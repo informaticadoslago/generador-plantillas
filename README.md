@@ -1,8 +1,36 @@
 # generador-plantillas
 
-Generador visual de informes: plantillas en XML, editor con lienzo A4 en el navegador, guardado en SQLite en el servidor y, más adelante, generación de PDF/Excel desde Laravel.
+Generador visual de informes: plantillas en XML y editor con lienzo A4 en el navegador. Es un paquete de Laravel (`informaticadoslago/generador-plantillas`) que guarda las plantillas en la base de datos del programa, cada una con su dueño (empresa, comunidad…), y escribe una Blade por plantilla para generar el PDF con Dompdf. También funciona suelto, sin Laravel, para probar el editor.
 
-## Ejecutar
+## Como paquete de Laravel
+
+Necesita Laravel 13 y PHP 8.3 o superior.
+
+```bash
+composer require informaticadoslago/generador-plantillas
+php artisan vendor:publish --tag=generador-plantillas-config
+php artisan migrate
+```
+
+Mientras no esté publicado, se instala desde la carpeta con un repositorio `path` de Composer (ver [`CLAUDE.md`](CLAUDE.md)).
+
+En el `boot()` de un ServiceProvider se indica de quién son las plantillas en cada petición:
+
+```php
+use InformaticadosLago\GeneradorPlantillas\GeneradorPlantillas;
+
+GeneradorPlantillas::plantillableUsando(fn ($request) => Empresa::find(session('empresa_id')));
+```
+
+El editor queda en `/generador-plantillas`. Rutas, permisos, plantillas globales, Blades y campos del editor se configuran en `config/generador-plantillas.php`. Con `blade` configurado, para generar un PDF:
+
+```php
+Pdf::loadView(GeneradorPlantillas::vista('recibo-alquiler', $empresa), ['datos' => $datos]);
+```
+
+Pruebas: `composer install && vendor/bin/phpunit`.
+
+## Suelto (sin Laravel)
 
 Necesita PHP 8 con `pdo_sqlite` (sin Composer ni dependencias). Desde la carpeta del proyecto:
 
@@ -26,6 +54,7 @@ Abre http://localhost:8000. La base de datos se crea sola en `datos/plantillas.s
 - Arrastrar, redimensionar con el asa, imán a la rejilla (Alt = ajuste fino), flechas, duplicar, eliminar, deshacer/rehacer.
 - **Guardar** (Ctrl+S) sobrescribe la plantilla del servidor o la crea si no existe (si cambió en el servidor, pregunta antes de pisarla). **Guardar como…** (Ctrl+Mayús+S) la guarda con otro nombre.
 - **Plantillas** con la lista guardada: abrir, descargar XML, duplicar y borrar.
+- Barra de botones en una columna a la izquierda y, desde un programa, botón «← Volver».
 - **Exportar XML** / **Importar XML**, y un cuadro con el XML en vivo que se puede editar y aplicar.
 - Sin servidor (abriendo `public/index.html` directamente) funciona en modo local, con borrador en el navegador.
 
